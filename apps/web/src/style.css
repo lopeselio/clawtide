@@ -156,10 +156,18 @@ input.code { width: 88px; text-transform: uppercase; letter-spacing: 3px; text-a
   .lesson h3 { font-size: 16px; }
   .txs { columns: 1; }
   .big-count { font-size: 90px; }
+  .desk { display: none; }
 }
 @media (max-height: 500px) and (orientation: landscape) {
+  .title { padding-top: calc(48px + var(--safe-t)); }
+  .hero { padding: 10px 16px; }
+  .hero h1 { font-size: 32px; }
+  .hero > p:first-of-type { display: none; }
+  .hero .name { margin: 4px 0; }
+  .desk { display: none; }
   .hud-tl, .scores { top: calc(46px + var(--safe-t)); }
-  .hud-tc { top: calc(8px + var(--safe-t)); bottom: auto; }
+  .hud-tc { top: calc(46px + var(--safe-t)); bottom: auto; font-size: 13px; padding: 4px 10px; }
+  .hide-narrow { display: none; }
   .tbtns { left: auto; right: calc(10px + var(--safe-r)); transform: none; flex-direction: column; bottom: calc(10px + var(--safe-b)); }
   .tbtn { width: 54px; height: 54px; }
   .feed { bottom: calc(10px + var(--safe-b)); width: min(320px, 45vw); }
