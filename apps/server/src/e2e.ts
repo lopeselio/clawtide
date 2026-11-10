@@ -23,6 +23,7 @@ const ok = (s: string): void => console.log(`  ✓ ${s}`);
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 const tx = (h: string): string => `https://testnet.nearblocks.io/txns/${h}`;
 
+const provider = new FailoverRpcProvider(['https://rpc.testnet.fastnear.com', 'https://near-testnet.drpc.org', 'https://testnet-rpc.intea.rs'].map((url) => new JsonRpcProvider({ url })));
 const credFile = (a: string): string => join(homedir(), '.near-credentials', 'testnet', `${a}.json`);
 function faucetAccount(id: string): KeyPairString {
   execFileSync('near', ['account', 'create-account', 'sponsor-by-faucet-service', id, 'autogenerate-new-keypair', 'save-to-legacy-keychain', 'network-config', 'testnet', 'create'], { stdio: 'ignore' });
@@ -34,7 +35,7 @@ async function fundedSubAccount(label: string): Promise<{ id: string; key: KeyPa
   const fk = JSON.parse(readFileSync(credFile(funder), 'utf8')).private_key as KeyPairString;
   const kp = KeyPair.fromRandom('ed25519');
   const sub = `${label}.${funder}`;
-  const f = new Account(funder, new JsonRpcProvider({ url: 'https://rpc.testnet.fastnear.com' }), KeyPairSigner.fromSecretKey(fk));
+  const f = new Account(funder, provider, KeyPairSigner.fromSecretKey(fk));
   await f.signAndSendTransaction({ receiverId: sub, actions: [actions.createAccount(), actions.transfer(200_000_000_000_000_000_000_000n), actions.addFullAccessKey(kp.getPublicKey())], waitUntil: 'EXECUTED_OPTIMISTIC' });
   writeFileSync(credFile(sub), JSON.stringify({ account_id: sub, public_key: kp.getPublicKey().toString(), private_key: kp.toString() }), { mode: 0o600 });
   return { id: sub, key: kp.toString() as KeyPairString };
@@ -53,7 +54,6 @@ try { key = faucetAccount(id); } catch {
   ({ id, key } = await fundedSubAccount(`e2e-${stamp}`));
   console.log(`  (the faucet is rate-limited: using ${id}, funded by its parent account)`);
 }
-const provider = new FailoverRpcProvider(['https://rpc.testnet.fastnear.com', 'https://near-testnet.drpc.org', 'https://testnet-rpc.intea.rs'].map((url) => new JsonRpcProvider({ url })));
 await sleep(3000);
 ok('account funded');
 
@@ -69,7 +69,7 @@ async function api<T>(path: string, body?: unknown): Promise<T> {
   return j;
 }
 
-const kit = new Near({ network: 'testnet', privateKey: key as `ed25519:${string}`, defaultSignerId: id });
+const kit = new Near({ network: { networkId: 'testnet', rpcUrl: 'https://near-testnet.drpc.org' }, privateKey: key as `ed25519:${string}`, defaultSignerId: id });
 async function relay(method: string, args: object): Promise<string> {
   const { payload } = await kit.transaction(id).functionCall(CONTRACT, method, args, { gas: '50 Tgas', attachedDeposit: '0 yocto' }).delegate();
   const r = await api<{ txHash: string }>('/ba/near/relay', { payload });
@@ -150,13 +150,15 @@ ok(`raid ${raid.id} on ${target.name}'s rockpool begun onchain`);
 let rv = raid.view;
 const cache = rv.tiles.indexOf(-5);
 const cheb = (a: number, c: number): number => Math.max(Math.abs((a % POOL) - (c % POOL)), Math.abs(Math.floor(a / POOL) - Math.floor(c / POOL)));
+const visits = new Map<number, number>();
 for (let guard = 0; !rv.over && guard < 80; guard++) {
+  visits.set(rv.at, (visits.get(rv.at) ?? 0) + 1);
   // safe if any stood-on neighbour shows 0; otherwise prefer low numbers, then closeness to the cache
   const score = (j: number): number => {
     if (rv.tiles[j] === RT_ROCK || rv.tiles[j] === RT_URCHIN) return 1e9;
     const nb = neighbours(POOL, POOL, j).filter((n) => rv.tiles[n] >= 0);
     const safe = rv.tiles[j] >= 0 || rv.tiles[j] === -5 || nb.some((n) => rv.tiles[n] === 0);
-    return (safe ? 0 : 100 + Math.max(0, ...nb.map((n) => rv.tiles[n])) * 50) + cheb(j, cache) * 10;
+    return (safe ? 0 : 100 + Math.max(0, ...nb.map((n) => rv.tiles[n])) * 50) + cheb(j, cache) * 10 + (visits.get(j) ?? 0) * 35;
   };
   let best = -1, bs = 1e9;
   for (let d = 1; d <= 8; d++) { const j = stepTo(POOL, POOL, rv.at, d); if (j >= 0 && score(j) < bs) { bs = score(j); best = d; } }
