@@ -1,6 +1,7 @@
 // Every number the game is tuned with. Ticks run at TICK_HZ; positions are tile indices.
 
-export const RULES_VERSION = 1;
+/** 1: the first rounds (quick AI crabs, frozen for replay). 2: AI crabs think at about a person's pace. */
+export const RULES_VERSION = 2;
 export const TICK_HZ = 10;
 /** one sealed chunk: 3 s */
 export const CHUNK = 30;

@@ -11,9 +11,10 @@ import type { View } from './sim.ts';
 // and doesn't race for pearls it can't reach first.
 
 export type Skill = 'easy' | 'normal' | 'hard';
-export interface Brain { r: Rng; wait: number }
+/** `rules` picks the pacing table, so rounds settled under older rules still replay exactly. */
+export interface Brain { r: Rng; wait: number; rules?: number }
 
-export const newBrain = (seed: string, seat: number): Brain => ({ r: rngFrom(`clawtide|brain|${seed}|${seat}`), wait: 6 + seat * 2 });
+export const newBrain = (seed: string, seat: number, rules = 1): Brain => ({ r: rngFrom(`clawtide|brain|${seed}|${seat}`), wait: 6 + seat * 2, ...(rules > 1 ? { rules } : {}) });
 
 const HIDDEN = -1, URCHIN = -3;
 const isNum = (t: number): boolean => t >= 0;
@@ -101,7 +102,12 @@ export function nextStep(v: View, from: number, goal: number, r = reach(v, from)
   return r.prev[i] === from ? dirTo(v.w, from, i) : 0;
 }
 
-const WAIT: Record<Skill, [number, number]> = { easy: [5, 12], normal: [3, 7], hard: [1, 4] };
+// extra ticks of thought before each hop. v1 (frozen): quick. v2: about a person's pace.
+const WAITS: Record<number, Record<Skill, [number, number]>> = {
+  1: { easy: [5, 12], normal: [3, 7], hard: [1, 4] },
+  2: { easy: [9, 18], normal: [6, 12], hard: [3, 7] },
+};
+const waitOf = (b: Brain, skill: Skill): [number, number] => (WAITS[b.rules ?? 1] ?? WAITS[2])[skill];
 
 /** One AI hop. Mutates only the brain. */
 export function decide(v: View, b: Brain, skill: Skill): number {
@@ -113,7 +119,7 @@ export function decide(v: View, b: Brain, skill: Skill): number {
   const r = reach(v, me.at);
   const pick = (goal: number): number => {
     const d = nextStep(v, me.at, goal, r);
-    b.wait = int(b.r, WAIT[skill][0], WAIT[skill][1]);
+    b.wait = int(b.r, waitOf(b, skill)[0], waitOf(b, skill)[1]);
     return d;
   };
 

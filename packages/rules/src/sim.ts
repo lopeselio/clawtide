@@ -77,7 +77,7 @@ export function createState(setup: Setup): State {
       name: x.name, at: board.spawns[i], spawn: board.spawns[i], pearls: 0, clams: 0, stings: 0, pinches: 0,
       cool: 0, stun: 0, pry: 0, pinchCool: 0, bot: x.bot ?? null,
     })),
-    brains: setup.seats.map((x, i) => (x.bot ? newBrain(setup.seed, i) : null)),
+    brains: setup.seats.map((x, i) => (x.bot ? newBrain(setup.seed, i, setup.rules ?? RULES_VERSION) : null)),
     clamsLeft: board.clams,
     tick: 0,
     over: false,
@@ -145,7 +145,7 @@ export function step(s: State, inputs: (Input | undefined)[]): { events: SimEven
     if (c.pinchCool > 0) c.pinchCool--;
     if (inputs[i] === TAKEOVER && !c.bot) {
       c.bot = 'normal';
-      s.brains[i] = newBrain(`${s.board.spawns.join(',')}|${s.tick}`, i);
+      s.brains[i] = newBrain(`${s.board.spawns.join(',')}|${s.tick}`, i, s.rules);
       applied[i] = TAKEOVER;
       events.push({ k: 'takeover', c: i });
       continue;

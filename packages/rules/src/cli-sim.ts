@@ -6,12 +6,13 @@ import { createState, step } from './sim.ts';
 import type { Skill } from './bot.ts';
 
 const n = Number(process.argv[2] ?? 40);
+const rules = Number(process.argv[3] ?? RULES_VERSION);
 const skills: Skill[] = ['easy', 'normal', 'hard', 'normal'];
 const wins = [0, 0, 0, 0], pearls = [0, 0, 0, 0], stings = [0, 0, 0, 0];
 let ticks = 0, tide = 0;
 const shapes: Record<string, number> = {};
 for (let k = 0; k < n; k++) {
-  const s = createState({ seed: `sim-${k}`, rules: RULES_VERSION, seats: skills.map((b, i) => ({ name: `${b}${i}`, bot: b })) });
+  const s = createState({ seed: `sim-${k}`, rules, seats: skills.map((b, i) => ({ name: `${b}${i}`, bot: b })) });
   shapes[s.board.shape] = (shapes[s.board.shape] ?? 0) + 1;
   while (!s.over) step(s, []);
   ticks += s.tick;
