@@ -100,18 +100,17 @@ export function raidStep(s: RaidState, dir: number): boolean {
 export const RT_HIDDEN = -1, RT_ROCK = -4, RT_CACHE = -5, RT_URCHIN = -3;
 export interface RaidView { at: number; energy: number; tiles: number[]; hops: number; stings: number; over: boolean; won: boolean }
 
-/** What the raider sees: rocks and the cache, urchins they hit, numbers where they've stood. */
+/** What the raider sees: rocks and the cache, urchins they hit, numbers where they've stood. Even after
+ * the raid, nothing more: the layout stays secret until its owner replaces it. */
 export function raidView(s: RaidState): RaidView {
   const l = s.layout;
   const tiles = l.split('').map((ch, i) => {
     if (ch === 'r') return RT_ROCK;
     if (ch === 'c') return RT_CACHE;
     if (s.stung[i]) return RT_URCHIN;
-    if (s.stepped[i] || s.over) return neighbours(POOL, POOL, i).filter((j) => l[j] === 'u').length;
+    if (s.stepped[i]) return neighbours(POOL, POOL, i).filter((j) => l[j] === 'u').length;
     return RT_HIDDEN;
   });
-  // once the raid is over the whole pool is shown
-  if (s.over) l.split('').forEach((ch, i) => { if (ch === 'u') tiles[i] = RT_URCHIN; });
   return { at: s.at, energy: s.energy, tiles, hops: s.hops, stings: s.stings, over: s.over, won: s.won };
 }
 
