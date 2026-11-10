@@ -1,0 +1,26 @@
+{
+  "name": "clawtide",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "packageManager": "pnpm@11.26.0",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "dev": "pnpm -r --parallel --filter ./apps/* dev",
+    "build": "pnpm --filter @clawtide/web build",
+    "start": "pnpm --filter @clawtide/server start",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "sim": "pnpm --filter @clawtide/rules sim",
+    "verify": "pnpm --filter @clawtide/server verify",
+    "e2e": "pnpm --filter @clawtide/server e2e",
+    "setup:agents": "pnpm --filter @clawtide/server setup:agents",
+    "contract:test": "cd contracts/clawtide && cargo test --locked",
+    "contract:build": "cd contracts/clawtide && cargo near build non-reproducible-wasm --locked"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "vitest": "3.2.7",
+    "tsx": "4.20.6"
+  }
+}
