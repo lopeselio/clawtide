@@ -2,9 +2,10 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { MoodState, moodFor } from './voxel/mood.ts';
 import { Sea, MARGIN, buildField, type Field } from './voxel/sea.ts';
-import { Crab } from './voxel/crab.ts';
+import { Crab, glintSprite } from './voxel/crab.ts';
+import { Glints, Particles, Rings, glowTexture } from './voxel/fx.ts';
 import { Shore } from './voxel/shore.ts';
-import { box, hash01, isCoarse, mat, shadedBox, swayTime } from './voxel/util.ts';
+import { box, hash01, isCoarse, mat, radialTexture, shadedBox, swayMaterial, swayTime, tint } from './voxel/util.ts';
 
 // The tidal flats, built from voxels: a sandbar of instanced sand blocks on a moving sea, numbers
 // painted on dug tiles, urchins, pearls, clams, kelp-flag marks and voxel hermit crabs. The same
@@ -21,7 +22,7 @@ export interface CrabState { at: number; name: string; color: string; stun: numb
 export interface Frame { tiles: number[]; items: number[]; crabs: CrabState[] }
 
 export const SEAT_COLORS = ['#ff7a59', '#4cc3ff', '#b18cff', '#ffd166'];
-const NUM_COLORS = ['', '#1f5fae', '#2a8a4a', '#c4302b', '#2a3f8f', '#8f2a2a', '#1c7a78', '#222222', '#6b6b6b'];
+const NUM_COLORS = ['', '#2f73d6', '#2e9e57', '#e0453d', '#4a3fb8', '#a8323a', '#15928d', '#333344', '#7a7a86'];
 
 const C = {
   sand: 0xf0d398,
@@ -40,18 +41,32 @@ function digitTexture(n: number): THREE.Texture {
   let t = digitTex.get(n);
   if (t) return t;
   const cv = document.createElement('canvas');
-  cv.width = cv.height = 64;
+  cv.width = cv.height = 128;
   const g = cv.getContext('2d')!;
-  g.font = '900 50px "Pixelify Sans", "Arial Black", sans-serif';
+  g.font = '900 100px "Pixelify Sans", "Arial Black", sans-serif';
   g.textAlign = 'center';
   g.textBaseline = 'middle';
-  g.lineWidth = 8;
-  g.strokeStyle = 'rgba(255,250,235,.95)';
-  g.strokeText(String(n), 32, 35);
+  g.lineJoin = 'round';
+  const s = String(n), x = 64, y = 70;
+  // a soft shadow pressed into the sand, a cream halo, a darker rim of the digit's own colour, the fill and a highlight
+  g.fillStyle = 'rgba(90,60,20,.28)';
+  g.fillText(s, x + 4, y + 6);
+  g.lineWidth = 20;
+  g.strokeStyle = 'rgba(255,248,228,.96)';
+  g.strokeText(s, x, y);
+  g.lineWidth = 7;
+  g.strokeStyle = new THREE.Color(NUM_COLORS[n]).offsetHSL(0, 0, -0.14).getStyle();
+  g.strokeText(s, x, y);
   g.fillStyle = NUM_COLORS[n];
-  g.fillText(String(n), 32, 35);
+  g.fillText(s, x, y);
+  g.save();
+  g.beginPath(); g.rect(0, 0, 128, 58); g.clip();
+  g.fillStyle = 'rgba(255,255,255,.22)';
+  g.fillText(s, x, y);
+  g.restore();
   t = new THREE.CanvasTexture(cv);
-  t.anisotropy = 4;
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 8;
   digitTex.set(n, t);
   return t;
 }
@@ -85,80 +100,62 @@ const urchinGeo = (() => {
     g.translate(v.x * 0.28, 0.2 + v.y * 0.28, v.z * 0.28);
     parts.push(g);
   }
-  return mergeGeometries(parts.map((p) => p.toNonIndexed()));
+  return mergeGeometries(parts.map((p) => (p.index ? p.toNonIndexed() : p)));
 })();
 const flagGeo = (() => {
-  const stick = box(0.04, 0.6, 0.04, 0, 0.3, 0).toNonIndexed();
-  const cloth = box(0.26, 0.18, 0.03, 0.14, 0.5, 0).toNonIndexed();
+  // a kelp stalk that kinks as it rises, with a bladder and leaves, and a red pennant at the top
+  const stick = mergeGeometries([box(0.05, 0.22, 0.05, 0, 0.11, 0), box(0.05, 0.2, 0.05, 0.025, 0.3, 0), box(0.05, 0.2, 0.05, 0, 0.48, 0), box(0.09, 0.09, 0.09, 0.01, 0.62, 0), box(0.12, 0.04, 0.03, -0.06, 0.24, 0), box(0.1, 0.04, 0.03, 0.07, 0.4, 0)].map((g) => g.toNonIndexed()));
+  const cloth = mergeGeometries([box(0.24, 0.16, 0.03, 0.14, 0.56, 0), box(0.1, 0.1, 0.03, 0.3, 0.56, 0)].map((g) => g.toNonIndexed()));
   return { stick, cloth };
 })();
 const rockGeo = mergeGeometries([box(0.7, 0.35, 0.6, 0, 0.17, 0), box(0.45, 0.3, 0.45, 0.1, 0.45, -0.05), box(0.3, 0.18, 0.25, -0.18, 0.4, 0.15)].map((g) => g.toNonIndexed()));
 
+/** One half of a clam: a fan of ribs, longest in the middle, with a hinge at the back. */
+const clamHalf = (y: number, up: number): THREE.BufferGeometry => {
+  const parts: THREE.BufferGeometry[] = [];
+  for (let k = -3; k <= 3; k++) {
+    const len = 0.5 - Math.abs(k) * 0.055, c = k % 2 ? C.clamB : C.clamA;
+    parts.push(tint(box(0.085, 0.1, len, k * 0.088, y, len / 2 - 0.02), c));
+    parts.push(tint(box(0.07, 0.03, 0.06, k * 0.088, y + up * 0.05, len - 0.04), 0xffe2ea));
+  }
+  parts.push(tint(box(0.22, 0.09, 0.08, 0, y, -0.03), 0xd77a92));
+  return mergeGeometries(parts);
+};
+const CLAM_BOTTOM = clamHalf(0.05, 1), CLAM_LID = clamHalf(0.05, 1);
+const clamMat = new THREE.MeshLambertMaterial({ vertexColors: true });
+const GLOW_GEO = new THREE.PlaneGeometry(0.9, 0.9).rotateX(-Math.PI / 2);
+const freeClam = (c: THREE.Group): void => { ((c.getObjectByName('glow') as THREE.Mesh).material as THREE.Material).dispose(); ((c.getObjectByName('gleam') as THREE.Sprite).material).dispose(); };
+const pearlMat = new THREE.MeshLambertMaterial({ color: C.pearl, emissive: 0x806a8a, emissiveIntensity: 0.7 });
+
 function makeClam(): THREE.Group {
   const g = new THREE.Group();
-  const a = mat(C.clamA), b = mat(C.clamB);
-  const bottom = new THREE.Group();
-  bottom.add(new THREE.Mesh(box(0.62, 0.12, 0.5, 0, 0.06, 0), a));
-  for (let k = -2; k <= 2; k++) bottom.add(new THREE.Mesh(box(0.06, 0.13, 0.5, k * 0.12, 0.07, 0), b));
+  const bottom = new THREE.Mesh(CLAM_BOTTOM, clamMat);
+  bottom.position.z = -0.22;
+  bottom.castShadow = true;
   g.add(bottom);
   const lid = new THREE.Group();
-  lid.position.set(0, 0.13, -0.24);
-  const lidMesh = new THREE.Group();
-  lidMesh.add(new THREE.Mesh(box(0.62, 0.12, 0.5, 0, 0.06, 0.24), a));
-  for (let k = -2; k <= 2; k++) lidMesh.add(new THREE.Mesh(box(0.06, 0.14, 0.5, k * 0.12, 0.08, 0.24), b));
+  lid.position.set(0, 0.11, -0.24);
+  const lidMesh = new THREE.Mesh(CLAM_LID, clamMat);
+  lidMesh.castShadow = true;
+  lidMesh.position.y = -0.05;
   lid.add(lidMesh);
   lid.name = 'lid';
   g.add(lid);
-  const pearl = new THREE.Mesh(new THREE.IcosahedronGeometry(0.11, 1), mat(C.pearl, 0x664466));
+  const pearl = new THREE.Mesh(new THREE.IcosahedronGeometry(0.11, 1), pearlMat);
   pearl.position.set(0, 0.18, 0.02);
   pearl.name = 'pearl';
   g.add(pearl);
+  // a gleam on the pearl as the lid lifts
+  const gleam = glintSprite(0.7);
+  gleam.position.set(0.05, 0.28, 0.06);
+  gleam.name = 'gleam';
+  gleam.visible = false;
+  g.add(gleam);
+  const glow = new THREE.Mesh(GLOW_GEO, new THREE.MeshBasicMaterial({ map: glowTexture(), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0 }));
+  glow.position.y = 0.02;
+  glow.name = 'glow';
+  g.add(glow);
   return g;
-}
-
-// ---------- particles ----------
-
-interface Particle { i: number; life: number; max: number; vel: THREE.Vector3; pos: THREE.Vector3; size: number }
-class Particles {
-  mesh: THREE.InstancedMesh;
-  private free: number[] = [];
-  private live: Particle[] = [];
-  private m = new THREE.Matrix4();
-  constructor(scene: THREE.Scene, n = 400) {
-    this.mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial(), n);
-    this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    this.mesh.frustumCulled = false;
-    const zero = new THREE.Matrix4().makeScale(0, 0, 0);
-    for (let i = 0; i < n; i++) { this.free.push(i); this.mesh.setMatrixAt(i, zero); this.mesh.setColorAt(i, new THREE.Color(0xffffff)); }
-    scene.add(this.mesh);
-  }
-  burst(at: THREE.Vector3, color: number, n: number, speed = 2, size = 0.08, life = 0.6): void {
-    const col = new THREE.Color(color);
-    for (let k = 0; k < n; k++) {
-      const i = this.free.pop();
-      if (i === undefined) return;
-      const a = Math.random() * Math.PI * 2, up = 0.5 + Math.random();
-      this.live.push({ i, life, max: life, size: size * (0.6 + Math.random() * 0.8), pos: at.clone(), vel: new THREE.Vector3(Math.cos(a) * speed * Math.random(), up * speed, Math.sin(a) * speed * Math.random()) });
-      this.mesh.setColorAt(i, col);
-    }
-    if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
-  }
-  update(dt: number): void {
-    if (!this.live.length) return;
-    const keep: Particle[] = [];
-    for (const p of this.live) {
-      p.life -= dt;
-      if (p.life <= 0) { this.mesh.setMatrixAt(p.i, this.m.makeScale(0, 0, 0)); this.free.push(p.i); continue; }
-      p.vel.y -= 6 * dt;
-      p.pos.addScaledVector(p.vel, dt);
-      const s = p.size * (p.life / p.max);
-      this.m.makeScale(s, s, s).setPosition(p.pos);
-      this.mesh.setMatrixAt(p.i, this.m);
-      keep.push(p);
-    }
-    this.live = keep;
-    this.mesh.instanceMatrix.needsUpdate = true;
-  }
 }
 
 // ---------- the world ----------
@@ -185,6 +182,10 @@ export class World {
   /** seconds since this sandbar started rising out of the sea */
   private riseT = 9;
   private particles: Particles;
+  private rings: Rings;
+  private glints: Glints;
+  private hollows: THREE.InstancedMesh | null = null;
+  private pearlGlow: THREE.InstancedMesh | null = null;
   private clock = new THREE.Clock();
   private boardGroup = new THREE.Group();
   w = 0;
@@ -244,6 +245,8 @@ export class World {
     this.scene.add(this.boardGroup);
     this.shoreDetail = new Shore(this.scene);
     this.particles = new Particles(this.scene);
+    this.rings = new Rings(this.scene);
+    this.glints = new Glints(this.scene);
 
     this.hover = new THREE.Mesh(new THREE.BoxGeometry(1.02, 0.06, 1.02), new THREE.MeshBasicMaterial({ color: C.hover, transparent: true, opacity: 0.35, depthWrite: false }));
     this.hover.visible = false;
@@ -305,6 +308,11 @@ export class World {
       this.tiles.setColorAt(i, sandColor(false, this.fromWater[i], i, col));
     }
     this.boardGroup.add(this.tiles);
+    // dug tiles look scooped: a soft darker rim pressed into the sand under the number
+    this.hollows = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.98, 0.98).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: radialTexture('rgba(150,100,40,0)', 'rgba(120,78,28,0.34)'), transparent: true, depthWrite: false }), n);
+    this.hollows.count = 0;
+    this.hollows.renderOrder = 1;
+    this.boardGroup.add(this.hollows);
     this.digits = [];
     for (let d = 1; d <= 8; d++) {
       const m = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.78, 0.78).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: digitTexture(d), transparent: true, depthWrite: false }), n);
@@ -317,15 +325,21 @@ export class World {
     this.urchins.count = 0;
     this.urchins.castShadow = true;
     this.boardGroup.add(this.urchins);
-    this.pearls = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(0.15, 1), mat(C.pearl, 0x5a4a6a), n);
+    this.pearls = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(0.15, 1), pearlMat, n);
     this.pearls.count = 0;
+    this.pearls.castShadow = true;
     this.boardGroup.add(this.pearls);
+    // a soft glow on the sand under every loose pearl (no post-processing)
+    this.pearlGlow = new THREE.InstancedMesh(GLOW_GEO, new THREE.MeshBasicMaterial({ map: glowTexture(), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.6 }), n);
+    this.pearlGlow.count = 0;
+    this.pearlGlow.renderOrder = 3;
+    this.boardGroup.add(this.pearlGlow);
     this.rocks = new THREE.InstancedMesh(rockGeo, mat(C.rock), n);
     this.rocks.count = 0;
     this.rocks.castShadow = this.rocks.receiveShadow = true;
     this.boardGroup.add(this.rocks);
-    this.flags = [new THREE.InstancedMesh(flagGeo.stick, mat(C.kelp), n), new THREE.InstancedMesh(flagGeo.cloth, mat(C.flag, 0x550010), n)];
-    for (const f of this.flags) { f.count = 0; this.boardGroup.add(f); }
+    this.flags = [new THREE.InstancedMesh(flagGeo.stick, swayMaterial({ color: C.kelp }, 0.05, 2.2), n), new THREE.InstancedMesh(flagGeo.cloth, swayMaterial({ color: C.flag, emissive: 0x550010 }, 0.05, 2.2), n)];
+    for (const f of this.flags) { f.count = 0; f.castShadow = true; this.boardGroup.add(f); }
     const fit = Math.max(w / Math.max(0.4, this.camera.aspect) * 1.45, h * 1.9);
     const cap = isCoarse ? 22 : 34;
     this.dist = THREE.MathUtils.clamp(fit, 13, cap);
@@ -360,10 +374,15 @@ export class World {
   private clearBoard(): void {
     for (const c of [...this.boardGroup.children]) {
       this.boardGroup.remove(c);
-      if (c instanceof THREE.InstancedMesh) { c.dispose(); if (c.geometry !== urchinGeo && c.geometry !== rockGeo && c.geometry !== flagGeo.stick && c.geometry !== flagGeo.cloth) c.geometry.dispose(); }
+      if (c instanceof THREE.InstancedMesh) {
+        c.dispose();
+        if (c.geometry !== urchinGeo && c.geometry !== rockGeo && c.geometry !== flagGeo.stick && c.geometry !== flagGeo.cloth && c.geometry !== GLOW_GEO) c.geometry.dispose();
+        if (c.material !== pearlMat) (c.material as THREE.Material).dispose();
+      }
     }
     for (const c of this.crabs) { this.scene.remove(c.g, c.crab.ground); c.crab.dispose(); if (c.label) { c.label.material.map?.dispose(); c.label.material.dispose(); } }
     this.crabs = [];
+    for (const c of this.clams.values()) freeClam(c);
     this.clams.clear();
     this.tiles = null;
   }
@@ -376,7 +395,7 @@ export class World {
     const m4 = new THREE.Matrix4();
     const col = new THREE.Color();
     const counts = new Array(9).fill(0);
-    let u = 0, p = 0, r = 0;
+    let u = 0, p = 0, r = 0, hl = 0, puffs = 0;
     const t = this.clock.elapsedTime;
     for (let i = 0; i < f.tiles.length; i++) {
       const v = f.tiles[i];
@@ -387,14 +406,25 @@ export class World {
         this.tileGoal[i] = goal;
         this.tiles.setColorAt(i, sandColor(dug || v === W_ROCK, this.fromWater[i], i, col));
         if (this.tiles.instanceColor) this.tiles.instanceColor.needsUpdate = true;
-        if (prev && dug && prev.tiles[i] === W_HIDDEN) this.particles.burst(this.pos(i, 0.35), C.sand, 3, 1.5, 0.08, 0.45);
+        if (prev && dug && prev.tiles[i] === W_HIDDEN && puffs++ < 14) {
+          // a dig puff: clods of sand and a ring of dust (a big flood only puffs its first few tiles)
+          const at = this.pos(i, 0.3);
+          this.particles.burst(at, sandColor(false, this.fromWater[i], i, col).getHex(), 5, { speed: 1.7, size: 0.1, life: 0.5, jitter: 0.08 });
+          this.rings.spawn(at.setY(0.15), 0xfff1d2, 0.75, 0.35);
+        }
       }
       const at = this.pos(i, 0.125);
+      if (dug) { m4.makeTranslation(at.x, 0.123, at.z); this.hollows!.setMatrixAt(hl++, m4); }
       if (v >= 1 && v <= 8) { m4.makeTranslation(at.x, at.y, at.z); this.digits[v - 1].setMatrixAt(counts[v]++, m4); }
       if (v === W_URCHIN) {
         m4.makeRotationY(i).setPosition(at.x, 0.12, at.z);
         this.urchins!.setMatrixAt(u++, m4);
-        if (prev && prev.tiles[i] !== W_URCHIN) this.particles.burst(this.pos(i, 0.4), C.spine, 14, 3, 0.09, 0.7);
+        if (prev && prev.tiles[i] !== W_URCHIN) {
+          // the urchin bursts: spines fly and a purple shockwave rolls over the sand
+          this.particles.burst(this.pos(i, 0.4), C.spine, 16, { speed: 3.4, size: 0.09, life: 0.7, drag: 1.5 });
+          this.particles.burst(this.pos(i, 0.3), C.urchin, 8, { speed: 2, size: 0.12, life: 0.6 });
+          this.rings.spawn(this.pos(i, 0.16), 0x9a5cff, 1.9, 0.55);
+        }
       }
       if (v === W_ROCK) { m4.makeRotationY((i % 4) * 1.3).setPosition(at.x, 0.12, at.z); this.rocks!.setMatrixAt(r++, m4); }
       if (f.items[i] === 2) { m4.makeTranslation(at.x, 0.3 + Math.sin(t * 3 + i) * 0.04, at.z); this.pearls!.setMatrixAt(p++, m4); }
@@ -409,17 +439,26 @@ export class World {
       } else if (!clamHere && this.clams.has(i)) {
         const c = this.clams.get(i)!;
         this.boardGroup.remove(c);
+        freeClam(c);
         this.clams.delete(i);
-        this.particles.burst(this.pos(i, 0.4), 0xffffff, 18, 2.6, 0.07, 0.8);
-        this.particles.burst(this.pos(i, 0.4), C.clamA, 10, 2, 0.08, 0.6);
+        this.particles.burst(this.pos(i, 0.4), C.clamA, 12, { speed: 2.2, size: 0.09, life: 0.6 });
+        this.particles.burst(this.pos(i, 0.5), 0xfff6d8, 14, { speed: 1.2, size: 0.06, life: 1.1, gravity: -1.2, drag: 2.5 });
+        this.rings.spawn(this.pos(i, 0.16), C.gold, 1.5, 0.6, true);
+        this.glints.spawn(this.pos(i, 0.7), 1.3, 0.7);
       }
     }
     for (let d = 1; d <= 8; d++) { this.digits[d - 1].count = counts[d]; this.digits[d - 1].instanceMatrix.needsUpdate = true; }
     this.urchins!.count = u; this.urchins!.instanceMatrix.needsUpdate = true;
     this.pearls!.count = p; this.pearls!.instanceMatrix.needsUpdate = true;
+    this.pearlGlow!.count = p;
+    this.hollows!.count = hl; this.hollows!.instanceMatrix.needsUpdate = true;
     this.rocks!.count = r; this.rocks!.instanceMatrix.needsUpdate = true;
     // picked-up pearls sparkle
-    if (prev) for (let i = 0; i < f.items.length; i++) if (prev.items[i] === 2 && f.items[i] !== 2) this.particles.burst(this.pos(i, 0.35), C.pearl, 8, 1.8, 0.06, 0.5);
+    if (prev) for (let i = 0; i < f.items.length; i++) if (prev.items[i] === 2 && f.items[i] !== 2) {
+      this.particles.burst(this.pos(i, 0.35), 0xffffff, 10, { speed: 1.1, size: 0.06, life: 0.8, gravity: -1.5, drag: 3 });
+      this.glints.spawn(this.pos(i, 0.45), 0.9, 0.45);
+      this.rings.spawn(this.pos(i, 0.15), 0xfff4e6, 0.6, 0.3, true);
+    }
     this.syncMarks(f);
     this.syncCrabs(f, prev);
     this.last = f;
@@ -488,13 +527,13 @@ export class World {
   /** The crab that just got stung bursts spines where it stepped. */
   fx(kind: 'sting' | 'clam' | 'pearl' | 'pinch' | 'splash' | 'emote', tile: number, seat = -1): void {
     const p = this.pos(tile, 0.4);
-    if (kind === 'sting') this.particles.burst(p, C.spine, 16, 3.2, 0.1, 0.8);
-    if (kind === 'clam') this.particles.burst(p, C.gold, 16, 3, 0.08, 0.9);
-    if (kind === 'pinch') this.particles.burst(p, C.gold, 10, 2, 0.07, 0.6);
+    if (kind === 'sting') { this.particles.burst(p, C.spine, 16, { speed: 3.2, size: 0.1, life: 0.8, drag: 1 }); this.rings.spawn(this.pos(tile, 0.16), 0x9a5cff, 1.4, 0.45); }
+    if (kind === 'clam') { this.particles.burst(p, C.gold, 18, { speed: 3, size: 0.08, life: 0.9 }); this.glints.spawn(this.pos(tile, 0.9), 1.4, 0.8); }
+    if (kind === 'pinch') { this.particles.burst(p, C.gold, 10, { speed: 2, size: 0.07, life: 0.6 }); this.glints.spawn(this.pos(tile, 0.8), 0.8, 0.4); }
     if (kind === 'emote' && seat >= 0 && this.crabs[seat]) {
       const g = this.crabs[seat].g;
       this.crabs[seat].crab.clack = 0.8;
-      this.particles.burst(g.position.clone().setY(1.2), 0xffffff, 6, 1.4, 0.06, 0.5);
+      this.particles.burst(g.position.clone().setY(1.2), 0xffffff, 6, { speed: 1.4, size: 0.06, life: 0.5 });
     }
   }
 
@@ -632,8 +671,18 @@ export class World {
       if (this.last && this.pearls && this.pearls.count) {
         const m4 = new THREE.Matrix4();
         let p = 0;
-        this.last.items.forEach((it, i) => { if (it === 2) { const at = this.pos(i); m4.makeRotationY(t + i).setPosition(at.x, 0.3 + Math.sin(t * 3 + i) * 0.05, at.z); this.pearls!.setMatrixAt(p++, m4); } });
+        const g4 = new THREE.Matrix4();
+        this.last.items.forEach((it, i) => {
+          if (it !== 2) return;
+          const at = this.pos(i), b = Math.sin(t * 3 + i);
+          m4.makeRotationY(t + i).setPosition(at.x, 0.32 + b * 0.06, at.z);
+          this.pearls!.setMatrixAt(p, m4);
+          const gs = 0.85 + b * 0.12;
+          g4.makeScale(gs, 1, gs).setPosition(at.x, 0.13, at.z);
+          this.pearlGlow!.setMatrixAt(p++, g4);
+        });
         this.pearls.instanceMatrix.needsUpdate = true;
+        this.pearlGlow!.instanceMatrix.needsUpdate = true;
       }
     }
     // clams: the lid opens as a crab pries
@@ -646,6 +695,13 @@ export class World {
       const pearl = c.getObjectByName('pearl')!;
       pearl.visible = lid.rotation.x < -0.2;
       pearl.position.y = 0.18 + Math.sin(t * 4) * 0.02;
+      // the pearl gleams and glows as the lid lifts
+      const open = THREE.MathUtils.clamp(-lid.rotation.x / 1.1, 0, 1);
+      const gleam = c.getObjectByName('gleam') as THREE.Sprite;
+      gleam.visible = open > 0.3;
+      gleam.scale.setScalar((0.25 + open * 0.5) * (0.75 + Math.max(0, Math.sin(t * 5 + i)) ** 6 * 0.6));
+      gleam.material.rotation = t * 0.8;
+      ((c.getObjectByName('glow') as THREE.Mesh).material as THREE.MeshBasicMaterial).opacity = open * 0.85;
     }
     // crabs: hops are little arcs; a sting is a big tumbling fling back to the shore
     for (const o of this.crabs) {
@@ -655,7 +711,7 @@ export class World {
         o.g.position.lerpVectors(o.from, o.to, e);
         o.g.position.y = o.from.y + (o.to.y - o.from.y) * e + Math.sin(Math.PI * e) * o.arc;
         if (o.spin) o.crab.rig.rotation.x = o.spin * e;
-        if (o.t >= 1) { o.crab.rig.rotation.x = 0; if (o.spin) this.particles.burst(o.g.position.clone(), C.sand, 8, 2, 0.08, 0.5); }
+        if (o.t >= 1) { o.crab.rig.rotation.x = 0; if (o.spin) { this.particles.burst(o.g.position.clone(), C.sand, 10, { speed: 2, size: 0.09, life: 0.5 }); this.rings.spawn(o.g.position.clone().setY(0.15), 0xfff1d2, 1, 0.4); } }
       } else {
         o.g.position.y = this.pos(o.at, 0.12).y;
       }
@@ -704,6 +760,8 @@ export class World {
       }
     }
     this.particles.update(dt);
+    this.rings.update(dt);
+    this.glints.update(dt);
     this.renderer.render(this.scene, this.camera);
   }
 
