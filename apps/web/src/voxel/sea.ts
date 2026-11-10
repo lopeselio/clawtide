@@ -94,11 +94,15 @@ void main() {
   vec2 cell = floor(vW.xz * 4.0);
   vec2 q = (cell + 0.5) / 4.0;
   float wob = (hash(cell) - 0.5) * 0.22;
-  float d = field(q) - uFront + wob;
+  float raw = field(q) + wob;
+  // d: distance from the waterline (the tide's front); depth: from the sandbar's own shore, so
+  // drowned sand stays turquoise when the tide is in
+  float d = raw - uFront;
   if (d < -0.05) discard;
-  vec3 col = mix(uShallow, uMid, smoothstep(0.3, 2.4, d));
-  col = mix(col, uDeep, smoothstep(2.4, 6.5, d));
-  float shallow = 1.0 - smoothstep(0.0, 2.6, d);
+  float depth = max(raw, 0.0);
+  vec3 col = mix(uShallow, uMid, smoothstep(0.3, 2.4, depth));
+  col = mix(col, uDeep, smoothstep(2.4, 6.5, depth));
+  float shallow = 1.0 - smoothstep(0.0, 2.6, depth);
   // caustics
   float c = sin(q.x * 2.3 + sin(q.y * 1.9 + t * 0.9) * 1.3 + t * 0.7) * sin(q.y * 2.6 + sin(q.x * 1.4 - t * 0.8) * 1.2 - t * 0.5);
   col += pow(abs(c), 5.0) * 0.25 * shallow * uSun;
@@ -111,7 +115,7 @@ void main() {
   // sparkles, most in the shallows
   vec2 sc = floor(vW.xz * 6.0);
   float h = hash(sc + 17.0);
-  col += uSun * step(0.988, h) * pow(max(sin(t * 2.4 + h * 80.0), 0.0), 18.0) * (1.0 - smoothstep(0.6, 3.0, d)) * 0.9;
+  col += uSun * step(0.988, h) * pow(max(sin(t * 2.4 + h * 80.0), 0.0), 18.0) * (1.0 - smoothstep(0.6, 3.0, depth)) * 0.9;
   // foam: a lapping band at the waterline and a wavelet washing in
   float lap = 0.42 + 0.16 * sin(t * 1.6 + q.x * 1.7 + q.y * 2.1);
   float foam = 1.0 - smoothstep(lap - 0.1, lap, d);
@@ -119,7 +123,7 @@ void main() {
   float wave = (1.0 - smoothstep(0.0, 0.18, abs(d - 2.4 * (1.0 - ph)))) * smoothstep(0.0, 0.25, ph) * (1.0 - ph);
   foam = max(foam, wave * 0.75 * step(0.55, hash(cell * 0.5 + floor(t * 0.21))));
   col = mix(col, uFoam, foam * 0.9);
-  float a = mix(mix(0.62, 0.95, smoothstep(0.2, 3.5, d)), 1.0, foam * 0.9);
+  float a = mix(mix(0.62, 0.95, smoothstep(0.2, 3.5, depth)), 1.0, foam * 0.9);
   float f = smoothstep(uFogNear, uFogFar, length(vW - cameraPosition));
   gl_FragColor = vec4(mix(col, uFog, f), mix(a, 1.0, f));
   #include <colorspace_fragment>
