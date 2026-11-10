@@ -35,6 +35,8 @@ export function App() {
   useEffect(() => {
     if (!host.current) return;
     const w = new World(host.current);
+    // a handle for capture scripts (the README's thumbnail recipe)
+    (window as unknown as { __clawtide?: World }).__clawtide = w;
     setWorld(w);
     return () => w.dispose();
   }, []);
