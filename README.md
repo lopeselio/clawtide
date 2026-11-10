@@ -6,7 +6,7 @@ Between sandbars, build a **rockpool** of hidden urchins and **raid** other crab
 
 **Nobody can choose or predict a board.** The referee first commits `sha256(secret)` to the contract; the contract then draws NEAR's block VRF randomness (`env::random_seed_array()`) **in a later receipt**, and the board seed is `sha256(vrf | secret)`. During play each crab's hops are **sealed onchain every 3 seconds**; at the tide the secret and the whole log are opened, and the contract rebuilds every seal before it mints a single PEARL. `pnpm verify <roundId>` replays any round from the chain and the opened log, with no keys.
 
-Built for NEAR HACKATHON (Nov 2026), part of the [NEAR Arcade](https://arcade.lopeselio.online/). Design: [DESIGN.md](DESIGN.md). Play: **https://clawtide.lopeselio.online/** (also https://clawtide.happyfield-4a6c8f0b.northeurope.azurecontainerapps.io/).
+Built for NEAR HACKATHON (Nov 2026), part of the [NEAR Arcade](https://arcade.lopeselio.online/). Design: [DESIGN.md](DESIGN.md). Play: **https://clawtide.lopeselio.online/** (also https://clawtide.jollyrock-a3368b02.northeurope.azurecontainerapps.io/).
 
 ![Four crabs digging a sandbar](thumbs/clawtide.webp)
 
@@ -114,7 +114,7 @@ pnpm e2e              # the live testnet flow above (needs a running server and 
 
 ## Deploying
 
-`scripts/deploy-azure.sh` builds the image in Azure Container Registry and runs it on Azure Container Apps (resource group `clawtide`, one replica because rooms live in memory); `scripts/azure-storage.sh` mounts an Azure Files share at `/data` for round and raid records and rockpool layouts. Keys come from `~/.near-credentials` and `.env` (never the repo). `pnpm setup:agents` creates the Driftwood Crabs once.
+`scripts/deploy-azure.sh` builds the image in Azure Container Registry and runs it on Azure Container Apps (resource group `clawtide`, one replica because rooms live in memory); `scripts/azure-storage.sh` mounts an Azure Files share at `/data` for round and raid records and rockpool layouts (on the very first deploy the app only becomes healthy once this has run, because it writes to `/data`). Keys come from `~/.near-credentials` and `.env` (never the repo). `pnpm setup:agents` creates the Driftwood Crabs once.
 
 ## Lineage and disclosures
 
