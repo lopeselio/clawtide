@@ -68,7 +68,7 @@ fi
 FQDN=$(az containerapp show -g "$RG" -n "$APP" --query properties.configuration.ingress.fqdn -o tsv)
 echo "https://$FQDN/"
 for _ in $(seq 1 30); do
-  if curl -fsS "https://$FQDN/api/health" 2>/dev/null | grep -q "\"$TAG\""; then echo "live: $TAG"; exit 0; fi
+  if curl -fsS --max-time 10 "https://$FQDN/api/health" 2>/dev/null | grep -q "\"$TAG\""; then echo "live: $TAG"; exit 0; fi
   sleep 10
 done
 echo "the new revision didn't report $TAG within 5 minutes" >&2; exit 1
