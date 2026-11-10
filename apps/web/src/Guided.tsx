@@ -32,7 +32,7 @@ export function Guided({ world, name, finish, quit }: { world: World; name: stri
   useEffect(() => {
     const s = createState({ seed: 'tutorial', rules: RULES_VERSION, seats: [{ name: name || 'You' }], board: tutorialBoard() });
     st.current = s;
-    world.setBoard(s.board.w, s.board.h, s.board.land);
+    world.setBoard(s.board.w, s.board.h, s.board.land, 'tutorial');
     const v0 = viewFor(s, 0);
     world.update(frameOf(v0));
     world.focus(v0.crabs[0].at);

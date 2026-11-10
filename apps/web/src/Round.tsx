@@ -56,7 +56,7 @@ export function Round({ world, start, results, lines, send, subscribe, next, lea
   const push = (text: string, cls = ''): void => setFeed((f) => [{ k: feedK++, text, cls }, ...f].slice(0, 5));
 
   useEffect(() => {
-    world.setBoard(start.w, start.h, start.land);
+    world.setBoard(start.w, start.h, start.land, start.shape);
     world.update(frameOf(start.v, names));
     world.focus(start.v.crabs[start.you].at);
     world.showReach = false;

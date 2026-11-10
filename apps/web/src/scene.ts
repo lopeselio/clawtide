@@ -1,12 +1,17 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { MoodState, moodFor } from './voxel/mood.ts';
+import { Sea, MARGIN, buildField, type Field } from './voxel/sea.ts';
+import { Shore } from './voxel/shore.ts';
+import { box, hash01, isCoarse, mat, shadedBox, swayTime } from './voxel/util.ts';
 
 // The tidal flats, built from voxels: a sandbar of instanced sand blocks on a moving sea, numbers
 // painted on dug tiles, urchins, pearls, clams, kelp-flag marks and voxel hermit crabs. The same
 // world shows live rounds, the guided tutorial, the title screen's attract mode and rockpool raids.
 // Everything is procedural (boxes, instanced where there are many); no model files, no textures
-// beyond tiny canvases for digits and names. Pixel ratio is capped and nothing casts shadows, so
-// it runs on weak phone GPUs.
+// beyond tiny canvases for digits and names. Each sandbar shape has its own time of day (voxel/
+// mood.ts); the sea is a shader (voxel/sea.ts). Soft sun shadows on desktop only; on touch screens
+// the pixel ratio is capped and nothing casts shadows, so it runs on weak phone GPUs.
 
 /** Tile codes the world understands (same as the rules' views): */
 export const W_WATER = -2, W_HIDDEN = -1, W_URCHIN = -3, W_ROCK = -4, W_CACHE = -5;
@@ -18,21 +23,15 @@ export const SEAT_COLORS = ['#ff7a59', '#4cc3ff', '#b18cff', '#ffd166'];
 const NUM_COLORS = ['', '#1f5fae', '#2a8a4a', '#c4302b', '#2a3f8f', '#8f2a2a', '#1c7a78', '#222222', '#6b6b6b'];
 
 const C = {
-  sky: 0x8fd3e8, fog: 0x9fdcec, sea: 0x1f8fb3, seaDeep: 0x13607f, foam: 0xe9fbff,
-  sand: 0xf0d398, sandDug: 0xf7e4b8, sandHidden: 0xdcb56f, wet: 0xc79f5f,
+  sand: 0xf0d398,
   urchin: 0x3b1f52, spine: 0x6c3fa0, pearl: 0xfff6ff, clamA: 0xff9eb5, clamB: 0xffc7d4, rock: 0x7b8794, rockHi: 0x9aa6b2,
   kelp: 0x2f8f4e, flag: 0xff4d6d, hover: 0xffffff, crab: 0xe0533b, crabDark: 0xa83a28, gold: 0xffcc33,
 };
 
-const isCoarse = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
-
-function box(w: number, h: number, d: number, x = 0, y = 0, z = 0): THREE.BoxGeometry {
-  const g = new THREE.BoxGeometry(w, h, d);
-  g.translate(x, y, z);
-  return g;
-}
-const mat = (color: THREE.ColorRepresentation, emissive = 0): THREE.MeshLambertMaterial =>
-  new THREE.MeshLambertMaterial({ color, emissive, emissiveIntensity: emissive ? 0.6 : 0 });
+/** Sand, by how far a tile is from the water: wet at the shore, dry and golden inland; dug sand is paler. */
+const SAND_BURIED = [0xd6a35e, 0xe5b56b, 0xefc477], SAND_DUG = [0xeed6a6, 0xfae4b9, 0xfff0cc];
+const sandColor = (dug: boolean, fromWater: number, i: number, c: THREE.Color): THREE.Color =>
+  c.set((dug ? SAND_DUG : SAND_BURIED)[Math.min(2, Math.max(0, fromWater - 1))]).offsetHSL(0, 0, (hash01(i) - 0.5) * 0.035);
 
 /** One canvas-texture plane per digit, shared by every board. */
 const digitTex = new Map<number, THREE.Texture>();
@@ -205,9 +204,21 @@ export class World {
   renderer: THREE.WebGLRenderer;
   scene = new THREE.Scene();
   camera: THREE.PerspectiveCamera;
-  private sea: THREE.Mesh;
-  private seaY = -0.08;
+  private sea: Sea;
+  private shoreDetail: Shore;
+  private mood = new MoodState(moodFor());
+  private hemi: THREE.HemisphereLight;
+  private sun: THREE.DirectionalLight;
+  private field: Field | null = null;
+  /** tiles from the water, per board tile (1 = on the shore) */
+  private fromWater: number[] = [];
+  private seaY = 0.9;
   private seaTarget = -0.08;
+  /** how far inland the tide has swept (tiles), and where it's heading */
+  private front = 0;
+  private frontGoal = 0;
+  /** seconds since this sandbar started rising out of the sea */
+  private riseT = 9;
   private particles: Particles;
   private clock = new THREE.Clock();
   private boardGroup = new THREE.Group();
@@ -248,22 +259,25 @@ export class World {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     host.appendChild(this.renderer.domElement);
     this.camera = new THREE.PerspectiveCamera(40, host.clientWidth / Math.max(1, host.clientHeight), 0.1, 200);
-    this.scene.background = new THREE.Color(C.sky);
-    this.scene.fog = new THREE.Fog(C.fog, 30, 70);
-    this.scene.add(new THREE.HemisphereLight(0xfff4dc, 0x2a6f8a, 1.6));
-    const sun = new THREE.DirectionalLight(0xfff0d0, 1.6);
-    sun.position.set(-8, 14, 10);
-    this.scene.add(sun);
-
-    const seaGeo = new THREE.PlaneGeometry(120, 120, 48, 48);
-    seaGeo.rotateX(-Math.PI / 2);
-    this.sea = new THREE.Mesh(seaGeo, new THREE.MeshLambertMaterial({ color: C.sea, transparent: true, opacity: 0.92, flatShading: true }));
-    this.sea.position.y = this.seaY;
-    this.scene.add(this.sea);
-    const deep = new THREE.Mesh(new THREE.PlaneGeometry(120, 120).rotateX(-Math.PI / 2), mat(C.seaDeep));
-    deep.position.y = -0.7;
-    this.scene.add(deep);
+    this.scene.background = this.mood.haze.clone();
+    this.scene.fog = new THREE.Fog(this.mood.haze.clone(), 30, 72);
+    this.hemi = new THREE.HemisphereLight(0xffffff, 0xffffff, 1.4);
+    this.scene.add(this.hemi);
+    this.sun = new THREE.DirectionalLight(0xffffff, 1.6);
+    this.scene.add(this.sun, this.sun.target);
+    if (!isCoarse) {
+      // soft sun shadows on desktop; phones skip them
+      this.renderer.shadowMap.enabled = true;
+      this.renderer.shadowMap.type = THREE.PCFShadowMap;
+      this.sun.castShadow = true;
+      this.sun.shadow.mapSize.set(2048, 2048);
+      this.sun.shadow.radius = 3;
+      this.sun.shadow.bias = -0.0008;
+      this.sun.shadow.normalBias = 0.02;
+    }
+    this.sea = new Sea(this.scene, isCoarse ? 64 : 112);
     this.scene.add(this.boardGroup);
+    this.shoreDetail = new Shore(this.scene);
     this.particles = new Particles(this.scene);
 
     this.hover = new THREE.Mesh(new THREE.BoxGeometry(1.02, 0.06, 1.02), new THREE.MeshBasicMaterial({ color: C.hover, transparent: true, opacity: 0.35, depthWrite: false }));
@@ -299,22 +313,31 @@ export class World {
 
   // ---------- building a board ----------
 
-  setBoard(w: number, h: number, land: number[]): void {
+  /** mood: the sandbar's shape key (bar, atoll, …), 'tutorial' or 'rockpool'; picks the time of day. */
+  setBoard(w: number, h: number, land: number[], mood?: string): void {
     this.clearBoard();
     this.w = w; this.h = h; this.land = land.slice();
     this.last = null;
     this.marks.clear();
     this.follow = -1;
     const n = w * h;
-    const tileGeo = new THREE.BoxGeometry(0.98, 1, 0.98);
-    this.tiles = new THREE.InstancedMesh(tileGeo, new THREE.MeshLambertMaterial(), n);
+    this.field?.tex.dispose();
+    const field = buildField(w, h, land);
+    this.field = field;
+    this.sea.setField(field);
+    this.fromWater = Array.from({ length: n }, (_, i) => field.dist[(Math.floor(i / w) + MARGIN) * field.gw + (i % w) + MARGIN]);
+    this.shoreDetail.build(w, h, field, mood === 'rockpool');
+    this.mood.set(moodFor(mood));
+    const tileGeo = shadedBox(0.98, 1, 0.98);
+    this.tiles = new THREE.InstancedMesh(tileGeo, new THREE.MeshLambertMaterial({ vertexColors: true }), n);
+    this.tiles.castShadow = this.tiles.receiveShadow = true;
     this.tileTop = new Array(n).fill(0.34);
     this.tileGoal = this.tileTop.slice();
     const col = new THREE.Color();
     for (let i = 0; i < n; i++) {
       if (!land[i]) { this.tiles.setMatrixAt(i, new THREE.Matrix4().makeScale(0, 0, 0)); this.tiles.setColorAt(i, col.set(0)); continue; }
       this.setTileMatrix(i);
-      this.tiles.setColorAt(i, col.set(this.shore(i) ? C.wet : C.sandHidden).offsetHSL(0, 0, ((i * 7919) % 13) / 260 - 0.025));
+      this.tiles.setColorAt(i, sandColor(false, this.fromWater[i], i, col));
     }
     this.boardGroup.add(this.tiles);
     this.digits = [];
@@ -327,49 +350,44 @@ export class World {
     }
     this.urchins = new THREE.InstancedMesh(urchinGeo, mat(C.urchin, 0x2a0f40), n);
     this.urchins.count = 0;
+    this.urchins.castShadow = true;
     this.boardGroup.add(this.urchins);
     this.pearls = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(0.15, 1), mat(C.pearl, 0x5a4a6a), n);
     this.pearls.count = 0;
     this.boardGroup.add(this.pearls);
     this.rocks = new THREE.InstancedMesh(rockGeo, mat(C.rock), n);
     this.rocks.count = 0;
+    this.rocks.castShadow = this.rocks.receiveShadow = true;
     this.boardGroup.add(this.rocks);
     this.flags = [new THREE.InstancedMesh(flagGeo.stick, mat(C.kelp), n), new THREE.InstancedMesh(flagGeo.cloth, mat(C.flag, 0x550010), n)];
     for (const f of this.flags) { f.count = 0; this.boardGroup.add(f); }
-    // foam around the sand
-    const foam = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 0.03, 1), new THREE.MeshBasicMaterial({ color: C.foam, transparent: true, opacity: 0.45 }), n);
-    let f = 0;
-    const m4 = new THREE.Matrix4();
-    for (let i = 0; i < n; i++) {
-      if (land[i]) continue;
-      const x = i % w, z = Math.floor(i / w);
-      let near = false;
-      for (let dz = -1; dz <= 1 && !near; dz++) for (let dx = -1; dx <= 1; dx++) { const xx = x + dx, zz = z + dz; if (xx >= 0 && zz >= 0 && xx < w && zz < h && land[zz * w + xx]) { near = true; break; } }
-      if (near) { m4.makeTranslation(x - w / 2 + 0.5, -0.04, z - h / 2 + 0.5); foam.setMatrixAt(f++, m4); }
-    }
-    foam.count = f;
-    foam.name = 'foam';
-    this.boardGroup.add(foam);
     const fit = Math.max(w / Math.max(0.4, this.camera.aspect) * 1.45, h * 1.9);
     const cap = isCoarse ? 22 : 34;
     this.dist = THREE.MathUtils.clamp(fit, 13, cap);
     // when the whole sandbar fits on screen the camera stays put; otherwise it follows you
     this.followK = fit > cap ? 0.85 : 0.08;
     this.target.set(0, 0, 0);
-    this.seaY = -0.8; this.seaTarget = -0.08; // the sandbar rises out of the sea
-  }
-
-  private shore(i: number): boolean {
-    const x = i % this.w, z = Math.floor(i / this.w);
-    for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
-      const xx = x + dx, zz = z + dz;
-      if (xx < 0 || zz < 0 || xx >= this.w || zz >= this.h || !this.land[zz * this.w + xx]) return true;
-    }
-    return false;
+    // the sandbar rises out of the sea: the water drains off it from the middle outwards
+    this.seaY = 0.9; this.seaTarget = -0.08;
+    this.front = field.inner + 1.5; this.frontGoal = 0;
+    this.riseT = 0;
+    // the sun's shadow covers the whole sandbar
+    const sh = this.sun.shadow.camera;
+    const r = Math.max(w, h) / 2 + 3;
+    sh.left = -r; sh.right = r; sh.top = r; sh.bottom = -r; sh.near = 1; sh.far = 60;
+    sh.updateProjectionMatrix();
   }
 
   private setTileMatrix(i: number): void {
-    const top = this.tileTop[i];
+    let top = this.tileTop[i];
+    if (this.riseT < 3) {
+      // rising: inland tiles first, a little jitter so it isn't a ruler-straight wave
+      const inner = this.field?.inner ?? 1;
+      const delay = (inner - this.fromWater[i]) * 0.09 + hash01(i + 5) * 0.14;
+      const e = THREE.MathUtils.clamp((this.riseT - delay) / 0.55, 0, 1);
+      const back = 1 + 2.2 * Math.pow(e - 1, 3) + 1.2 * Math.pow(e - 1, 2); // ease out, a little overshoot
+      top = -0.6 + (top + 0.6) * back;
+    }
     const p = this.pos(i);
     this.tiles!.setMatrixAt(i, new THREE.Matrix4().makeScale(1, top + 0.7, 1).setPosition(p.x, (top - 0.7) / 2, p.z));
   }
@@ -402,7 +420,7 @@ export class World {
       const goal = v === W_ROCK ? 0.12 : dug ? 0.12 : 0.34;
       if (this.tileGoal[i] !== goal) {
         this.tileGoal[i] = goal;
-        this.tiles.setColorAt(i, col.set(dug || v === W_ROCK ? C.sandDug : this.shore(i) ? C.wet : C.sandHidden).offsetHSL(0, 0, ((i * 7919) % 13) / 300 - 0.02));
+        this.tiles.setColorAt(i, sandColor(dug || v === W_ROCK, this.fromWater[i], i, col));
         if (this.tiles.instanceColor) this.tiles.instanceColor.needsUpdate = true;
         if (prev && dug && prev.tiles[i] === W_HIDDEN) this.particles.burst(this.pos(i, 0.35), C.sand, 3, 1.5, 0.08, 0.45);
       }
@@ -420,6 +438,7 @@ export class World {
         const c = makeClam();
         c.position.copy(this.pos(i, 0.12));
         if (v === W_CACHE) c.scale.setScalar(1.35);
+        c.traverse((o) => { o.castShadow = true; });
         this.clams.set(i, c);
         this.boardGroup.add(c);
       } else if (!clamHere && this.clams.has(i)) {
@@ -467,6 +486,7 @@ export class World {
       const k = this.crabs.length;
       const c = f.crabs[k];
       const g = makeCrab(c.color);
+      g.traverse((o) => { o.castShadow = true; });
       const crown = makeCrown();
       crown.position.y = 1.18;
       crown.visible = false;
@@ -524,7 +544,7 @@ export class World {
   }
 
   /** The tide comes in and swallows the sandbar. */
-  tide(): void { this.seaTarget = 0.9; }
+  tide(): void { this.seaTarget = 0.9; this.frontGoal = (this.field?.inner ?? 4) + 1.5; }
 
   focus(tile: number): void { if (tile >= 0) { const p = this.pos(tile); this.target.set(p.x, 0, p.z); } }
   recenter(): void { this.userMovedAt = 0; }
@@ -620,18 +640,33 @@ export class World {
   private frame(): void {
     const dt = Math.min(0.05, this.clock.getDelta());
     const t = this.clock.elapsedTime;
-    // sea: gentle swell, and the tide
-    this.seaY += (this.seaTarget - this.seaY) * Math.min(1, dt * (this.seaTarget > 0 ? 0.9 : 2));
-    this.sea.position.y = this.seaY;
-    const pa = this.sea.geometry.attributes.position as THREE.BufferAttribute;
-    for (let i = 0; i < pa.count; i++) pa.setY(i, Math.sin(pa.getX(i) * 0.6 + t * 1.3) * 0.05 + Math.cos(pa.getZ(i) * 0.7 + t) * 0.04);
-    pa.needsUpdate = true;
-    if (this.sea.geometry.attributes.normal) this.sea.geometry.computeVertexNormals();
-    // tiles settle towards their height (digging sinks them)
+    // light and sea: ease towards this sandbar's mood
+    const m = this.mood;
+    m.step(Math.min(1, dt * 1.6));
+    this.hemi.color.copy(m.sky); this.hemi.groundColor.copy(m.ground); this.hemi.intensity = m.hemiI;
+    this.sun.color.copy(m.sun); this.sun.intensity = m.sunI;
+    this.sun.target.position.set(this.target.x, 0, this.target.z);
+    this.sun.position.copy(m.sunDir).multiplyScalar(25).add(this.sun.target.position);
+    const fog = this.scene.fog as THREE.Fog;
+    fog.color.copy(m.haze);
+    (this.scene.background as THREE.Color).copy(m.haze);
+    // the tide: the water rises, and its front sweeps over the sand from the shore inwards (or
+    // drains off a new sandbar from the middle outwards)
+    this.seaY += (this.seaTarget - this.seaY) * Math.min(1, dt * (this.seaTarget > 0 ? 1.6 : 2.2));
+    const span = (this.field?.inner ?? 4) + 1.5;
+    const fs = span / (this.frontGoal > this.front ? 2.6 : 1.3);
+    this.front += THREE.MathUtils.clamp(this.frontGoal - this.front, -fs * dt, fs * dt);
+    this.sea.update(t, this.seaY, this.front, m, fog);
+    swayTime.value = t;
+    // tiles settle towards their height (digging sinks them); a new sandbar rises
     if (this.tiles) {
       let changed = false;
+      const rising = this.riseT < 3;
+      this.riseT += dt;
       for (let i = 0; i < this.tileTop.length; i++) {
-        if (!this.land[i] || this.tileTop[i] === this.tileGoal[i]) continue;
+        if (!this.land[i]) continue;
+        if (rising) { this.setTileMatrix(i); changed = true; }
+        if (this.tileTop[i] === this.tileGoal[i]) continue;
         const d = this.tileGoal[i] - this.tileTop[i];
         this.tileTop[i] = Math.abs(d) < 0.01 ? this.tileGoal[i] : this.tileTop[i] + d * Math.min(1, dt * 14);
         this.setTileMatrix(i);
