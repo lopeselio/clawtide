@@ -109,7 +109,7 @@ export class Crab {
   private ring: THREE.Mesh;
   private seed: number;
   private walk = 0;
-  private fidget = { next: 1, kind: 0, t: 0 };
+  private fidget = { next: 1, kind: 0, t: 0, side: 1 };
   private blink = 3;
 
   constructor(color: string, seat: number) {
@@ -204,11 +204,11 @@ export class Crab {
     if (this.blink < 0) this.blink = 2 + hash01(Math.floor(ph * 7)) * 3;
     const f = this.fidget;
     f.next -= dt;
-    if (f.next < 0 && !p.hopping && !p.dazed) { f.kind = Math.floor(hash01(Math.floor(ph * 13)) * 3); f.t = 0; f.next = 2.5 + hash01(Math.floor(ph * 3)) * 3.5; }
+    if (f.next < 0 && !p.hopping && !p.dazed) { f.kind = Math.floor(hash01(Math.floor(ph * 13)) * 3); f.side = hash01(Math.floor(ph * 29)) > 0.5 ? 1 : -1; f.t = 0; f.next = 2.5 + hash01(Math.floor(ph * 3)) * 3.5; }
     f.t += dt;
     const fk = f.t < 1.1 ? Math.sin((f.t / 1.1) * Math.PI) : 0;
     let look = 0, shuffle = 0;
-    if (f.kind === 0) look = fk * (hash01(Math.floor(f.next * 10)) > 0.5 ? 0.6 : -0.6);
+    if (f.kind === 0) look = fk * 0.6 * f.side;
     if (f.kind === 1 && fk > 0 && !snip) this.jawL.rotation.x = -Math.abs(Math.sin(f.t * 18)) * 0.5 * fk;
     if (f.kind === 2) shuffle = Math.sin(f.t * 16) * 0.12 * fk;
     for (const [k, e] of this.eyes.entries()) {
