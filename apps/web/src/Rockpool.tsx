@@ -106,7 +106,7 @@ function Raid({ world, raid, done }: { world: World; raid: { id: string; owner: 
   }, [busy, raid, show, v?.stings, world]);
 
   useEffect(() => {
-    world.setBoard(POOL, POOL, new Array(POOL * POOL).fill(1));
+    world.setBoard(POOL, POOL, new Array(POOL * POOL).fill(1), 'rockpool');
     world.showReach = true;
     void api<{ view: RaidView }>('/raid/hop', { id: raid.id, dir: 0 }).then((r) => show(r.view)).catch(() => undefined);
     return () => { world.showReach = false; world.onTap = null; world.onMark = null; };

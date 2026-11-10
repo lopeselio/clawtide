@@ -56,14 +56,14 @@ export function App() {
   useEffect(() => {
     if (!world || screen !== 'title') return;
     let s = createState({ seed: `title-${Math.floor(Math.random() * 1e9)}`, rules: RULES_VERSION, seats: (['hard', 'normal', 'normal', 'easy'] as Skill[]).map((b, i) => ({ name: ['Captain Pincer', 'Kelpie', 'Coral', 'Skitter'][i], bot: b })) });
-    world.setBoard(s.board.w, s.board.h, s.board.land);
+    world.setBoard(s.board.w, s.board.h, s.board.land, s.board.shape);
     let wait = 0;
     const t = setInterval(() => {
       if (s.over) {
         if (++wait < 30) return;
         wait = 0;
         s = createState({ seed: `title-${Math.floor(Math.random() * 1e9)}`, rules: RULES_VERSION, seats: s.crabs.map((c) => ({ name: c.name, bot: c.bot ?? 'normal' })) });
-        world.setBoard(s.board.w, s.board.h, s.board.land);
+        world.setBoard(s.board.w, s.board.h, s.board.land, s.board.shape);
       }
       const { events } = step(s, []);
       const v = viewFor(s, -1);
