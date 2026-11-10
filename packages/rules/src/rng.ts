@@ -3,7 +3,7 @@ import { utf8ToBytes } from '@noble/hashes/utils.js';
 
 // Seeded generator (xoshiro128**) with integer outputs. Its 128-bit state lives inside the sim state,
 // so a replay draws exactly the same numbers. 128 bits, seeded through sha256: watching a few ember
-// spawns can't be brute-forced back into the generator to predict the rest. No Math.random here.
+// spawns can't be brute-forced back into the generator to predict the rest. No platform randomness here.
 
 export interface Rng { a: number; b: number; c: number; d: number }
 
