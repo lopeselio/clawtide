@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { MoodState, moodFor } from './voxel/mood.ts';
 import { Sea, MARGIN, buildField, type Field } from './voxel/sea.ts';
+import { Crab } from './voxel/crab.ts';
 import { Shore } from './voxel/shore.ts';
 import { box, hash01, isCoarse, mat, shadedBox, swayTime } from './voxel/util.ts';
 
@@ -93,42 +94,6 @@ const flagGeo = (() => {
 })();
 const rockGeo = mergeGeometries([box(0.7, 0.35, 0.6, 0, 0.17, 0), box(0.45, 0.3, 0.45, 0.1, 0.45, -0.05), box(0.3, 0.18, 0.25, -0.18, 0.4, 0.15)].map((g) => g.toNonIndexed()));
 
-// ---------- the crab ----------
-
-function makeCrab(color: string): THREE.Group {
-  const g = new THREE.Group();
-  const shellM = mat(color), stripeM = mat(new THREE.Color(color).offsetHSL(0, -0.1, 0.18)), bodyM = mat(C.crab), darkM = mat(C.crabDark), eyeM = mat(0xffffff), pupilM = mat(0x111111);
-  const add = (geo: THREE.BufferGeometry, m: THREE.Material): THREE.Mesh => { const mesh = new THREE.Mesh(geo, m); g.add(mesh); return mesh; };
-  // a spiral conch, voxel by voxel
-  add(box(0.52, 0.34, 0.5, 0, 0.42, -0.08), shellM);
-  add(box(0.4, 0.26, 0.4, 0.05, 0.68, -0.12), stripeM);
-  add(box(0.28, 0.2, 0.28, 0.09, 0.88, -0.15), shellM);
-  add(box(0.15, 0.14, 0.15, 0.12, 1.03, -0.17), stripeM);
-  // body, claws, eyes on stalks, legs
-  add(box(0.44, 0.18, 0.3, 0, 0.2, 0.14), bodyM);
-  const clawL = add(box(0.2, 0.15, 0.22, -0.27, 0.22, 0.33), bodyM);
-  const clawR = add(box(0.14, 0.11, 0.16, 0.25, 0.2, 0.32), bodyM);
-  clawL.name = 'clawL'; clawR.name = 'clawR';
-  add(box(0.05, 0.18, 0.05, -0.09, 0.38, 0.25), darkM);
-  add(box(0.05, 0.18, 0.05, 0.09, 0.38, 0.25), darkM);
-  add(box(0.09, 0.09, 0.09, -0.09, 0.5, 0.26), eyeM);
-  add(box(0.09, 0.09, 0.09, 0.09, 0.5, 0.26), eyeM);
-  add(box(0.045, 0.045, 0.02, -0.09, 0.5, 0.31), pupilM);
-  add(box(0.045, 0.045, 0.02, 0.09, 0.5, 0.31), pupilM);
-  for (const s of [-1, 1]) for (let k = 0; k < 3; k++) add(box(0.22, 0.05, 0.05, s * 0.3, 0.1, 0.04 + k * 0.1), darkM);
-  return g;
-}
-
-function makeCrown(): THREE.Group {
-  const g = new THREE.Group();
-  const m = mat(C.gold, 0x6a4a00);
-  g.add(new THREE.Mesh(box(0.42, 0.1, 0.42), m));
-  for (const [x, z] of [[-0.16, -0.16], [0.16, -0.16], [-0.16, 0.16], [0.16, 0.16]]) g.add(new THREE.Mesh(box(0.09, 0.16, 0.09, x, 0.12, z), m));
-  const gem = new THREE.Mesh(box(0.1, 0.1, 0.1, 0, 0.1, 0.22), mat(0xfff6ff, 0x553366));
-  g.add(gem);
-  return g;
-}
-
 function makeClam(): THREE.Group {
   const g = new THREE.Group();
   const a = mat(C.clamA), b = mat(C.clamB);
@@ -198,7 +163,7 @@ class Particles {
 
 // ---------- the world ----------
 
-interface CrabObj { g: THREE.Group; label: THREE.Sprite | null; labelKey: string; crown: THREE.Group; stars: THREE.Group; from: THREE.Vector3; to: THREE.Vector3; t: number; dur: number; arc: number; at: number; spin: number }
+interface CrabObj { crab: Crab; g: THREE.Group; label: THREE.Sprite | null; labelKey: string; from: THREE.Vector3; to: THREE.Vector3; t: number; dur: number; arc: number; at: number; spin: number; stun: number; pry: number; crowned: boolean }
 
 export class World {
   renderer: THREE.WebGLRenderer;
@@ -397,7 +362,7 @@ export class World {
       this.boardGroup.remove(c);
       if (c instanceof THREE.InstancedMesh) { c.dispose(); if (c.geometry !== urchinGeo && c.geometry !== rockGeo && c.geometry !== flagGeo.stick && c.geometry !== flagGeo.cloth) c.geometry.dispose(); }
     }
-    for (const c of this.crabs) this.scene.remove(c.g);
+    for (const c of this.crabs) { this.scene.remove(c.g, c.crab.ground); c.crab.dispose(); if (c.label) { c.label.material.map?.dispose(); c.label.material.dispose(); } }
     this.crabs = [];
     this.clams.clear();
     this.tiles = null;
@@ -485,20 +450,12 @@ export class World {
     while (this.crabs.length < f.crabs.length) {
       const k = this.crabs.length;
       const c = f.crabs[k];
-      const g = makeCrab(c.color);
-      g.traverse((o) => { o.castShadow = true; });
-      const crown = makeCrown();
-      crown.position.y = 1.18;
-      crown.visible = false;
-      g.add(crown);
-      const stars = new THREE.Group();
-      for (let s = 0; s < 3; s++) { const st = new THREE.Mesh(box(0.1, 0.1, 0.1), mat(0xfff27a, 0xaa9900)); st.position.set(Math.cos(s * 2.1) * 0.35, 1.25, Math.sin(s * 2.1) * 0.35); stars.add(st); }
-      stars.visible = false;
-      g.add(stars);
+      const crab = new Crab(c.color, k);
+      const g = crab.g;
       const at = this.pos(c.at, this.tileTop[c.at] ?? 0.12);
       g.position.copy(at);
-      this.scene.add(g);
-      this.crabs.push({ g, label: null, labelKey: '', crown, stars, from: at.clone(), to: at.clone(), t: 1, dur: 0.3, arc: 0.3, at: c.at, spin: 0 });
+      this.scene.add(g, crab.ground);
+      this.crabs.push({ crab, g, label: null, labelKey: '', from: at.clone(), to: at.clone(), t: 1, dur: 0.3, arc: 0.3, at: c.at, spin: 0, stun: 0, pry: 0, crowned: false });
     }
     f.crabs.forEach((c, k) => {
       const o = this.crabs[k];
@@ -515,9 +472,7 @@ export class World {
         if (!stung && (dx || dz)) o.g.rotation.y = Math.atan2(dx, dz) + Math.PI / 2;
         o.at = c.at;
       }
-      o.crown.visible = c.crowned;
-      o.stars.visible = c.stun > 0;
-      o.g.userData.pry = c.pry;
+      o.stun = c.stun; o.pry = c.pry; o.crowned = c.crowned;
       const key = `${c.name}|${c.pearls}|${c.crowned}|${c.me}`;
       if (key !== o.labelKey) {
         if (o.label) { o.g.remove(o.label); o.label.material.map?.dispose(); o.label.material.dispose(); }
@@ -538,7 +493,7 @@ export class World {
     if (kind === 'pinch') this.particles.burst(p, C.gold, 10, 2, 0.07, 0.6);
     if (kind === 'emote' && seat >= 0 && this.crabs[seat]) {
       const g = this.crabs[seat].g;
-      g.userData.clack = 0.8;
+      this.crabs[seat].crab.clack = 0.8;
       this.particles.burst(g.position.clone().setY(1.2), 0xffffff, 6, 1.4, 0.06, 0.5);
     }
   }
@@ -699,20 +654,16 @@ export class World {
         const e = o.t;
         o.g.position.lerpVectors(o.from, o.to, e);
         o.g.position.y = o.from.y + (o.to.y - o.from.y) * e + Math.sin(Math.PI * e) * o.arc;
-        if (o.spin) o.g.rotation.x = o.spin * e;
-        if (o.t >= 1) { o.g.rotation.x = 0; if (o.spin) this.particles.burst(o.g.position.clone(), C.sand, 8, 2, 0.08, 0.5); }
+        if (o.spin) o.crab.rig.rotation.x = o.spin * e;
+        if (o.t >= 1) { o.crab.rig.rotation.x = 0; if (o.spin) this.particles.burst(o.g.position.clone(), C.sand, 8, 2, 0.08, 0.5); }
       } else {
-        const p = this.pos(o.at, 0.12);
-        o.g.position.y = p.y + Math.abs(Math.sin(t * 6 + o.at)) * 0.02;
+        o.g.position.y = this.pos(o.at, 0.12).y;
       }
-      const clack = (o.g.userData.clack as number) ?? 0;
-      const pr = (o.g.userData.pry as number) ?? 0;
-      const clawL = o.g.getObjectByName('clawL')!, clawR = o.g.getObjectByName('clawR')!;
-      const wave = clack > 0 || pr > 0 ? Math.sin(t * 22) * 0.25 : Math.sin(t * 2 + o.at) * 0.04;
-      clawL.position.y = 0.0 + wave; clawR.position.y = 0.0 - wave;
-      if (clack > 0) o.g.userData.clack = clack - dt;
-      o.stars.rotation.y += dt * 4;
-      o.crown.rotation.y += dt * 1.2;
+      // the shadow, seat ring and aura stay on the sand under the crab
+      o.crab.ground.position.set(o.g.position.x, 0.13, o.g.position.z);
+      const sc = 1 - Math.min(0.5, (o.g.position.y - 0.12) * 0.25);
+      o.crab.ground.scale.set(sc, 1, sc);
+      o.crab.animate(dt, t, { hopping: o.t < 1 && !o.spin, dazed: o.stun > 0 && o.t >= 1, prying: o.pry > 0, crowned: o.crowned });
     }
     // camera: follow my crab unless the player has panned recently
     if (this.follow >= 0 && this.crabs[this.follow] && performance.now() - this.userMovedAt > 2500) {
