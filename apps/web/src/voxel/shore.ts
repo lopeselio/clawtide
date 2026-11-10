@@ -33,7 +33,7 @@ export class Shore {
   clear(): void {
     for (const c of [...this.group.children]) {
       this.group.remove(c);
-      if (c instanceof THREE.InstancedMesh) { c.dispose(); if (c.userData.ownGeo) c.geometry.dispose(); }
+      if (c instanceof THREE.InstancedMesh) { c.dispose(); (c.material as THREE.Material).dispose(); if (c.userData.ownGeo) c.geometry.dispose(); }
     }
   }
 
