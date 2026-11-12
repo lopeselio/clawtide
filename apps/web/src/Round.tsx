@@ -156,12 +156,12 @@ function Results({ r, you, next, leave, account }: { r: ResultsMsg; you: number;
       <table className="tbl">
         <thead><tr><th /><th>Crab</th><th>Pearls</th><th>Clams</th><th>Stings</th><th>PEARL banked</th></tr></thead>
         <tbody>{order.map(({ s, i }) => (
-          <tr key={i} className={i === you ? 'me' : ''}><td><span className="dot" style={{ background: SEAT_COLORS[i] }} /></td><td>{s.name}{i === r.winner && ' ♛'}</td><td>{s.pearls}</td><td>{s.clams}</td><td>{s.stings}</td><td>{s.account ? (r.expected?.mints[i] ?? 0) : <span className="dim">guest</span>}</td></tr>
+          <tr key={i} className={i === you ? 'me' : ''}><td><span className="dot" style={{ background: SEAT_COLORS[i] }} /></td><td>{s.name}{i === r.winner && ' ♛'}</td><td>{s.pearls}</td><td>{s.clams}</td><td>{s.stings}</td><td>{s.account ? (r.expected?.mints[i] ?? 0) : <span className="dim">{s.kind === 'bot' ? '–' : 'guest'}</span>}</td></tr>
         ))}</tbody>
       </table>
       {account
         ? <p className="small">{banked} PEARL {r.settled ? 'banked to' : 'will be banked to'} <b>{account}</b>{r.settled ? ' ✓' : ' (settling onchain…)'}</p>
-        : <p className="small dim">Playing as a guest: sign in with NEAR to bank your pearls as PEARL and build a rockpool.</p>}
+        : <p className="small dim">Playing as a guest: a guest round banks no PEARL for anyone, AI crabs included. Sign in with NEAR to bank your pearls as PEARL and build a rockpool.</p>}
       {r.chain ? (
         <details className="small">
           <summary>Onchain proof: {r.settled ? 'settled ✓' : 'opening the log…'}</summary>
