@@ -29,5 +29,6 @@ export const walkthroughDone = (): boolean => get('clawtide:walkthrough') === '1
 export const setWalkthroughDone = (): void => put('clawtide:walkthrough', '1');
 export const tutorialDone = (): boolean => get('clawtide:tutorial') === '1';
 export const setTutorialDone = (): void => put('clawtide:tutorial', '1');
-export function getDifficulty(): Difficulty { const d = get('clawtide:difficulty'); return d === 'easy' || d === 'hard' ? d : 'normal'; }
+/** Easy until the player picks: Normal crabs can open every clam in under a minute, which is a rough first round. */
+export function getDifficulty(): Difficulty { const d = get('clawtide:difficulty'); return d === 'normal' || d === 'hard' ? d : 'easy'; }
 export const setDifficulty = (d: Difficulty): void => put('clawtide:difficulty', d);
