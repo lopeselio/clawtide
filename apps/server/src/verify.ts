@@ -17,25 +17,45 @@ const args = process.argv.slice(2);
 const opt = (k: string, d: string): string => { const i = args.indexOf(`--${k}`); return i >= 0 ? args[i + 1] : d; };
 const pos = args.filter((a, i) => !a.startsWith('--') && !args[i - 1]?.startsWith('--'));
 const HOST = opt('host', process.env.VERIFY_HOST ?? 'http://localhost:8851');
-// public testnet RPCs (docs.near.org/api/rpc/providers); on an error the next is tried
-const RPCS = args.includes('--rpc') ? [opt('rpc', '')] : ['https://rpc.testnet.fastnear.com', 'https://near-testnet.drpc.org', 'https://testnet-rpc.intea.rs', 'https://rpc.testnet.near.org'];
+// public testnet RPCs (docs.near.org/api/rpc/providers). Each is retried on a rate limit (429) or a
+// network error with a growing pause, then the next one is tried; rpc.testnet.near.org is deprecated.
+const RPCS = args.includes('--rpc') ? [opt('rpc', '')] : ['https://testnet-rpc.intea.rs', 'https://near-testnet.drpc.org', 'https://rpc.testnet.fastnear.com'];
 const CONTRACT = opt('contract', process.env.CONTRACT_ID ?? 'clawtide.testnet');
 if (!pos.length) { console.error('usage: pnpm verify <roundId> | pnpm verify raid <raidId>  [--host URL] [--rpc URL] [--contract ID]'); process.exit(2); }
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+function fail(msg: string): never { console.error(`✗ ${msg}`); process.exit(2); }
 
+class RetryableError extends Error {}
 async function viewCall<T>(method: string, a: object): Promise<T> {
-  let last: unknown;
+  const errors: string[] = [];
   for (const rpc of RPCS) {
-    try { return await viewAt<T>(rpc, method, a); } catch (e) { last = e; }
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try { return await viewAt<T>(rpc, method, a); } catch (e) {
+        const msg = (e as Error).message;
+        if (!(e instanceof RetryableError)) { errors.push(`${new URL(rpc).host}: ${msg}`); break; }
+        if (attempt === 2) errors.push(`${new URL(rpc).host}: ${msg}`);
+        else await sleep(800 * (attempt + 1));
+      }
+    }
   }
-  throw last;
+  return fail(`could not read ${method} from any NEAR testnet RPC (try again in a minute, or pass --rpc <url>):\n  ${errors.join('\n  ')}`);
 }
 async function viewAt<T>(rpc: string, method: string, a: object): Promise<T> {
-  const res = await fetch(rpc, {
-    method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'query', params: { request_type: 'call_function', finality: 'final', account_id: CONTRACT, method_name: method, args_base64: Buffer.from(JSON.stringify(a)).toString('base64') } }),
-  });
-  const j = (await res.json()) as { result?: { result: number[] }; error?: unknown };
-  if (!j.result) throw new Error(`RPC: ${JSON.stringify(j.error).slice(0, 200)}`);
+  let res: Response;
+  try {
+    res = await fetch(rpc, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, signal: AbortSignal.timeout(15_000),
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'query', params: { request_type: 'call_function', finality: 'final', account_id: CONTRACT, method_name: method, args_base64: Buffer.from(JSON.stringify(a)).toString('base64') } }),
+    });
+  } catch (e) { throw new RetryableError(`network error (${(e as Error).message})`); }
+  if (res.status === 429 || res.status >= 500) throw new RetryableError(`HTTP ${res.status}${res.status === 429 ? ' (rate-limited)' : ''}`);
+  const j = (await res.json().catch(() => ({}))) as { result?: { result: number[] }; error?: unknown };
+  if (!j.result) {
+    const err = JSON.stringify(j.error ?? `HTTP ${res.status}`).slice(0, 200);
+    // some providers report a rate limit inside a 200 body
+    if (/429|rate|too many/i.test(err)) throw new RetryableError(err);
+    throw new Error(err);
+  }
   return JSON.parse(Buffer.from(j.result.result).toString('utf8')) as T;
 }
 
@@ -81,9 +101,21 @@ interface ChainRound {
   open_head: string; secret: string | null; board_seed: string | null; finals: { pearls: number; clams: number; stings: number }[]; settled: boolean; winner: number | null; minted: number[];
 }
 
-const b = (await (await fetch(`${HOST}/api/round/${id}`)).json()) as Bundle & { error?: string };
-if (b.error) { console.error(b.error); process.exit(2); }
-if (!b.over || !b.secret) { console.error('that round is not over yet'); process.exit(2); }
+async function bundle(): Promise<Bundle & { error?: string }> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const res = await fetch(`${HOST}/api/round/${encodeURIComponent(id)}`, { signal: AbortSignal.timeout(15_000) });
+      if ((res.status === 429 || res.status >= 500) && attempt < 2) { await sleep(1000 * (attempt + 1)); continue; }
+      return (await res.json()) as Bundle & { error?: string };
+    } catch (e) {
+      if (attempt < 2) { await sleep(1000 * (attempt + 1)); continue; }
+      return fail(`could not reach ${HOST} (${(e as Error).message}); is the server running? Use --host https://clawtide.lopeselio.online for the hosted game.`);
+    }
+  }
+}
+const b = await bundle();
+if (b.error) fail(`${HOST}: ${b.error}${HOST.includes('localhost') ? ' (this is the local server; add --host https://clawtide.lopeselio.online for a hosted round)' : ''}`);
+if (!b.over || !b.secret) fail('that round is not over yet');
 const c = await viewCall<ChainRound | null>('get_round', { round_id: id });
 console.log(`round ${id} on ${CONTRACT}: ${b.seats.map((s) => s.name).join(', ')} (AI crabs on ${b.difficulty})\n`);
 check(!!c, 'the contract has this round');
