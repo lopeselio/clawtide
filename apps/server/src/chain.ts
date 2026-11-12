@@ -4,8 +4,8 @@ import { config, privateKey } from './config.ts';
 // Contract calls. Each signer's calls run one after another so nonces never collide.
 
 // several public testnet RPCs (docs.near.org/api/rpc/providers); on an error the next one is tried
-const RPCS = [config.rpcUrl, 'https://near-testnet.drpc.org', 'https://testnet-rpc.intea.rs'].filter((u, i, a) => a.indexOf(u) === i);
-const provider = new FailoverRpcProvider(RPCS.map((url) => new JsonRpcProvider({ url })));
+const RPCS = [config.rpcUrl, 'https://testnet-rpc.intea.rs', 'https://near-testnet.drpc.org', 'https://rpc.testnet.fastnear.com'].filter((u, i, a) => a.indexOf(u) === i);
+const provider = new FailoverRpcProvider(RPCS.map((url) => new JsonRpcProvider({ url }, { retries: 3, backoff: 2, wait: 500 })));
 const accounts = new Map<string, Account>();
 const queues = new Map<string, Promise<unknown>>();
 
