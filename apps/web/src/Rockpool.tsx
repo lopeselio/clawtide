@@ -131,7 +131,7 @@ function Raid({ world, raid, done }: { world: World; raid: { id: string; owner: 
       </div>
       {!v.over && <div className="hint panel-ish">Tap a glowing tile next to you to hop (or WASD). Reach the big clam. Long-press / right-click flags a tile.</div>}
       <div className="tbtns">
-        {!v.over && <button className="tbtn ghost" onClick={() => { void api('/raid/quit', { id: raid.id }).then(() => done()); }}>✕<small>Give up</small></button>}
+        {!v.over && <button className="tbtn ghost" onClick={() => { void api('/raid/quit', { id: raid.id }).then(() => done()); }} aria-label="Give up this raid"><span aria-hidden="true">✕</span><small aria-hidden="true">Give up</small></button>}
       </div>
       {v.over && (
         <div className="center results card">
