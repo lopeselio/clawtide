@@ -98,14 +98,14 @@ export function Guided({ world, name, finish, quit }: { world: World; name: stri
       </div>
       <div className="feed">{feed.map((f, k) => <p key={`${k}-${f}`}>{f}</p>)}</div>
       <div className="tbtns">
-        <button className={`tbtn ${markMode ? 'on' : 'ghost'}`} onClick={() => { setMarkMode(!markMode); sfx('click'); }} aria-pressed={markMode}>⚑<small>{markMode ? 'Flagging' : 'Flag'}</small></button>
-        <button className="tbtn ghost" onClick={() => world.recenter()}>◎<small>Me</small></button>
-        <button className="tbtn ghost" onClick={quit}>✕<small>Skip</small></button>
+        <button className={`tbtn ${markMode ? 'on' : 'ghost'}`} onClick={() => { setMarkMode(!markMode); sfx('click'); }} aria-pressed={markMode} aria-label={markMode ? 'Flag mode on: taps plant flags' : 'Flag mode: taps plant flags'}><span aria-hidden="true">⚑</span><small aria-hidden="true">{markMode ? 'Flagging' : 'Flag'}</small></button>
+        <button className="tbtn ghost" onClick={() => world.recenter()} aria-label="Centre the camera on my crab"><span aria-hidden="true">◎</span><small aria-hidden="true">Me</small></button>
+        <button className="tbtn ghost" onClick={quit} aria-label="Skip the practice sandbar"><span aria-hidden="true">✕</span><small aria-hidden="true">Skip</small></button>
       </div>
       {over && (
         <div className="center results card">
           <h2 className="win">The tide comes in!</h2>
-          <p>You opened every clam and banked <b>{me.pearls} pearls</b> (practice pearls: nothing went onchain). That’s the whole game: now race up to three rivals for real.</p>
+          <p>You opened every clam and banked <b>{me.pearls} pearls</b> (practice pearls: nothing went onchain). That’s the whole game: now race up to three rival crabs for real.</p>
           <div className="row mid"><button className="big" onClick={finish}>Dig a real sandbar</button></div>
         </div>
       )}

@@ -223,7 +223,7 @@ function Title({ cfg, account, play, practice, howto, create, join, rockpools }:
       <section className="hero card">
         <h1>CLAWTIDE</h1>
         <div className="tag">competitive minesweeper for hermit crabs, on NEAR</div>
-        <p>Race up to three crabs across a tidal sandbar. Numbers tell you how many <b>sea urchins</b> are buried around each tile; dig out <b>pearls</b> and pry open <b>clams</b> before your rivals. When the last clam opens, the tide swallows the sandbar and a new one rises. Every board comes from <b>NEAR’s VRF</b>, and every round is sealed onchain.</p>
+        <p>Race up to three rival crabs (four on the sand) across a tidal sandbar. Numbers tell you how many <b>sea urchins</b> are buried around each tile; dig out <b>pearls</b> and pry open <b>clams</b> before your rivals. When the last clam opens, the tide swallows the sandbar and a new one rises. Every board comes from <b>NEAR’s VRF</b>, and every round is sealed onchain.</p>
         <label className="name">Your name <input value={name} maxLength={20} placeholder="Crab" onChange={(e) => setNameState(e.target.value.replace(/[^A-Za-z0-9 _.'-]/g, ''))} onBlur={keep} /></label>
         <button className="big" onClick={() => { keep(); sfx('click'); play(); }}>{walkthroughDone() && tutorialDone() ? 'Dig a sandbar' : 'Play'}</button>
         <DifficultyPicker value={difficulty} onChange={(d) => { setDiff(d); setDifficulty(d); sfx('click'); }} />
@@ -249,7 +249,13 @@ function Title({ cfg, account, play, practice, howto, create, join, rockpools }:
             {board?.season && <p className="small dim">Season {board.season.season} · ends in {Math.ceil(seasonEnds / 3_600_000)} h · {board.season.rounds_settled} sandbars and {board.season.raids} raids settled · {board.season.supply} PEARL in existence</p>}
             {(board?.rows.length ?? 0) > 0 && <table className="tbl"><thead><tr><th>#</th><th>Crab</th><th>PEARL</th><th>this season</th><th>wins</th></tr></thead><tbody>{board!.rows.slice(0, 10).map((r, i) => <tr key={r.account} className={r.account === account ? 'me' : ''}><td>{i + 1}</td><td>{i === 0 && '♛ '}{r.name || short(r.account)}</td><td>{r.pearls}</td><td>{r.season_pearls}</td><td>{r.wins}</td></tr>)}</tbody></table>}
           </section>
-          {account && <YourCrab account={account} />}
+          {account ? <YourCrab account={account} /> : (
+            <section className="panel">
+              <h2>Your crab</h2>
+              <p className="dim">Playing as a guest. Guests play every mode, but a guest round banks no PEARL for anyone (AI crabs included).</p>
+              <p className="small dim">Sign in with NEAR (top right) to bank your pearls as PEARL, keep a record onchain and, after one sandbar, build a rockpool.</p>
+            </section>
+          )}
           <section className="panel">
             <h2>The Driftwood Crabs</h2>
             <p className="dim small">AI rivals with their own NEAR accounts (function-call keys that can only build rockpools). In a round each sees exactly what you see and deduces from the numbers; the difficulty sets how fast and how cleverly. Their pre-round taunts come from a NEAR AI model in a TEE; the model never plays.</p>
@@ -318,7 +324,7 @@ function Lobby({ room, drawing, send, leave }: { room: RoomMsg; drawing: boolean
               <span className="dot" style={{ background: SEAT_COLORS[i] }} />
               <b>{s.name}</b>{i === room.you && ' (you)'} <small className="dim">{s.kind === 'bot' ? 'Driftwood Crab' : s.signedIn ? 'signed in' : 'guest'}</small>
               <span className="grow" />{s.ready ? '✓ ready' : 'waiting'}
-              {room.host && i !== room.you && <button className="ghost small" onClick={() => send({ t: 'kick', seat: i })}>✕</button>}
+              {room.host && i !== room.you && <button className="ghost small" onClick={() => send({ t: 'kick', seat: i })} aria-label={`Remove ${s.name} from the room`}>✕</button>}
             </li>
           ))}
         </ul>

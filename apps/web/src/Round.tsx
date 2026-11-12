@@ -134,9 +134,9 @@ export function Round({ world, start, results, lines, send, subscribe, next, lea
         </div>
       )}
       <div className="tbtns">
-        <button className={`tbtn ${markMode ? 'on' : 'ghost'}`} onClick={() => { setMarkMode(!markMode); sfx('click'); }} aria-pressed={markMode}>⚑<small>{markMode ? 'Flagging' : 'Flag'}</small></button>
-        <button className="tbtn ghost" onClick={() => { send({ t: 'emote' }); sfx('clack'); }}>✂<small>Clack</small></button>
-        <button className="tbtn ghost" onClick={() => world.recenter()}>◎<small>Me</small></button>
+        <button className={`tbtn ${markMode ? 'on' : 'ghost'}`} onClick={() => { setMarkMode(!markMode); sfx('click'); }} aria-pressed={markMode} aria-label={markMode ? 'Flag mode on: taps plant flags' : 'Flag mode: taps plant flags'}><span aria-hidden="true">⚑</span><small aria-hidden="true">{markMode ? 'Flagging' : 'Flag'}</small></button>
+        <button className="tbtn ghost" onClick={() => { send({ t: 'emote' }); sfx('clack'); }} aria-label="Clack your claws"><span aria-hidden="true">✂</span><small aria-hidden="true">Clack</small></button>
+        <button className="tbtn ghost" onClick={() => world.recenter()} aria-label="Centre the camera on my crab"><span aria-hidden="true">◎</span><small aria-hidden="true">Me</small></button>
       </div>
       {counting && <div className="center big-count" key={Math.ceil((start.startsAt - now) / 1000)}>{Math.ceil((start.startsAt - now) / 1000)}</div>}
       {counting && <div className="center sub-count panel-ish">A <b>{start.shapeName}</b> rises: {start.clams} clams, {hiddenLeft} tiles of sand. {start.onchain ? 'Its layout comes from NEAR’s VRF draw.' : ''}</div>}
