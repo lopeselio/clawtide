@@ -136,6 +136,9 @@ input.code { width: 88px; text-transform: uppercase; letter-spacing: 3px; text-a
 .dots i.on { background: var(--gold); }
 .dots i.done { background: var(--mint); }
 
+@media (pointer: coarse) {
+  .top button { min-height: 40px; min-width: 40px; padding: 8px 12px; }
+}
 @media (max-width: 720px) {
   .top { padding-top: calc(6px + var(--safe-t)); }
   .logo { font-size: 17px; }
