@@ -23,7 +23,7 @@ const ok = (s: string): void => console.log(`  ✓ ${s}`);
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 const tx = (h: string): string => `https://testnet.nearblocks.io/txns/${h}`;
 
-const provider = new FailoverRpcProvider(['https://rpc.testnet.fastnear.com', 'https://near-testnet.drpc.org', 'https://testnet-rpc.intea.rs'].map((url) => new JsonRpcProvider({ url })));
+const provider = new FailoverRpcProvider(['https://testnet-rpc.intea.rs', 'https://near-testnet.drpc.org', 'https://rpc.testnet.fastnear.com'].map((url) => new JsonRpcProvider({ url }, { retries: 3, backoff: 2, wait: 500 })));
 const credFile = (a: string): string => join(homedir(), '.near-credentials', 'testnet', `${a}.json`);
 function faucetAccount(id: string): KeyPairString {
   execFileSync('near', ['account', 'create-account', 'sponsor-by-faucet-service', id, 'autogenerate-new-keypair', 'save-to-legacy-keychain', 'network-config', 'testnet', 'create'], { stdio: 'ignore' });
