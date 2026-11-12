@@ -98,6 +98,8 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
         bots: AGENTS.map((a) => ({ label: a.label, name: a.name, account: accountOf(a) })),
       });
     }
+    // who is signed in, without an error status for guests (a 401 would log a console error on every guest load)
+    if (p === '/api/session') return json(res, 200, { accountId: me ?? null });
     if (p === '/api/me') {
       if (!me) return json(res, 401, { error: 'not signed in' });
       const [balance, record, pool] = config.chainEnabled

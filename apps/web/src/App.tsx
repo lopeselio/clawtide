@@ -43,7 +43,7 @@ export function App() {
 
   useEffect(() => {
     void api<ServerConfig>('/config').then((c) => { setCfg(c); setContract(c.contract); }).catch(() => undefined);
-    void api<{ accountId: string }>('/me').then((m) => setAccount(m.accountId)).catch(() => setAccount(null));
+    void api<{ accountId: string | null }>('/session').then((m) => setAccount(m.accountId)).catch(() => setAccount(null));
     const key = (e: KeyboardEvent): void => {
       if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
       if (e.code === 'KeyM') { const m = !isMuted(); setMuted(m); setMute(m); }
