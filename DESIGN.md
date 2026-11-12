@@ -43,7 +43,7 @@ A hand-drawn 15×6 sandbar whose lessons arrive in order: hop, grab a pearl, pry
 3. Board seed = `sha256("clawtide|board|{vrf}|{secret}")`.
 4. `seal(round_id, from_chunk, chunks)`: every 30 ticks, one seal per seat: `sha256("clawtide|seal|{round}|{seat}|{chunk}|{salt}|{hops}|{at},{pearls},{clams},{stings}")`, salt = `sha256("clawtide|salt|{secret}|{seat}|{chunk}")`, folded into a chain head `sha256("{head}|{chunk}|{seals,…}")`. Pending chunks are batched into one transaction.
 5. `open_chunks(round_id, secret, from, chunks)`: checks the secret, rebuilds every seal, re-folds the head (must equal the sealed one), records the board seed and the final standings.
-6. `settle_round(round_id)` (anyone): winner by the rule above; mints min(pearls, 60) PEARL to each seat with an account (players and Driftwood Crabs; guests bank nothing); updates records and the season.
+6. `settle_round(round_id)` (anyone): winner by the rule above; mints min(pearls, 60) PEARL to each seat with an account; updates records and the season. Which seats have an account is fixed at `create_round`: a signed-in player's seat does, a guest's never does, and a Driftwood Crab's only when a signed-in player is in the round (since 12 Nov 2026; before that they also banked in guest rounds). So a round of guests and AI crabs mints nothing, and the Driftwood Crabs only earn PEARL by playing against real wallets.
 
 `pnpm verify <roundId>` checks all of that from the chain and the server's opened log, replays every tick with packages/rules (re-deciding every AI hop from its own view) and compares every sealed chunk state, the final hash and the mint.
 
@@ -64,7 +64,7 @@ A hand-drawn 15×6 sandbar whose lessons arrive in order: hop, grab a pearl, pry
 
 ## The Driftwood Crabs
 
-Captain Pincer, Old Barnacle, Kelpie, Coral, Skitter: sub-accounts of `clawtide.testnet` created by the contract with only a function-call key for `build_rockpool` (0.5 NEAR gas allowance). They bank PEARL from rounds like players. Every day each builds a fresh rockpool drawn from a server secret (so the public code doesn't solve it), and yesterday's is revealed onchain. Their pre-round taunts come from a NEAR AI Cloud model in a TEE (signed; optional); the model never plays.
+Captain Pincer, Old Barnacle, Kelpie, Coral, Skitter: sub-accounts of `clawtide.testnet` created by the contract with only a function-call key for `build_rockpool` (0.5 NEAR gas allowance). They bank PEARL from rounds with a signed-in player in them, like players (not from guest rounds), and those hoards are what players raid. Every day each builds a fresh rockpool drawn from a server secret (so the public code doesn't solve it), and yesterday's is revealed onchain. Their pre-round taunts come from a NEAR AI Cloud model in a TEE (signed; optional); the model never plays.
 
 ## Server
 

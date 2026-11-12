@@ -191,8 +191,12 @@ export class Room {
     if (this.phase !== 'lobby') return;
     this.phase = 'drawing';
     this.broadcastRoom();
+    // PEARL is only minted in rounds a signed-in player is part of: a guest round banks nothing for
+    // anyone, so the Driftwood Crabs can't farm PEARL from guests. Their seats are registered with no
+    // account then, and settle_round (same rule as ever: mint to seats with an account) mints nothing.
+    const playerHere = this.members.some((m) => !m.bot && !!m.account);
     const plans: SeatPlan[] = this.members.map((m) => (m.bot
-      ? { name: m.name, kind: 'bot', bot: m.bot.label, account: config.chainEnabled && hasKey(accountOf(m.bot)) ? accountOf(m.bot) : undefined }
+      ? { name: m.name, kind: 'bot', bot: m.bot.label, account: playerHere && config.chainEnabled && hasKey(accountOf(m.bot)) ? accountOf(m.bot) : undefined }
       : { name: m.name, kind: m.account ? 'human' : 'guest', account: m.account ?? undefined }));
     const round = new ChainRound(plans, this.difficulty);
     this.round = round;
