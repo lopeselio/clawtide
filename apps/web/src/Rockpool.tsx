@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { POOL, POOL_ENTRY, POOL_ROCKS, POOL_URCHINS, RAID_ENERGY, RT_CACHE, RT_HIDDEN, RT_ROCK, RT_URCHIN, dirTo, layoutError, type RaidView } from '@clawtide/rules';
 import { api, short, type Me, type PoolRow, type RaidRow, type Tx } from './api.ts';
+import { chainView } from './rpc.ts';
 import { KEY_DIRS } from './Round.tsx';
 import { SEAT_COLORS, W_CACHE, W_HIDDEN, W_ROCK, W_URCHIN, type World } from './scene.ts';
 import { sfx } from './sound.ts';
@@ -153,9 +154,7 @@ async function fetchRaid(id: string): Promise<{ taken: number } | null> {
   }
   try {
     const cfg = await api<{ contract: string }>('/config');
-    const res = await fetch('https://near-testnet.drpc.org', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'query', params: { request_type: 'call_function', finality: 'optimistic', account_id: cfg.contract, method_name: 'get_raid', args_base64: btoa(JSON.stringify({ raid_id: id })) } }) });
-    const j = (await res.json()) as { result?: { result: number[] } };
-    return j.result ? JSON.parse(new TextDecoder().decode(new Uint8Array(j.result.result))) as { taken: number } : null;
+    return await chainView<{ taken: number } | null>(cfg.contract, 'get_raid', { raid_id: id });
   } catch { return null; }
 }
 
