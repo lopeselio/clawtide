@@ -43,7 +43,7 @@ function digitTexture(n: number): THREE.Texture {
   const cv = document.createElement('canvas');
   cv.width = cv.height = 128;
   const g = cv.getContext('2d')!;
-  g.font = '900 100px "Pixelify Sans", "Arial Black", sans-serif';
+  g.font = '400 100px "Lilita One", "Arial Black", sans-serif';
   g.textAlign = 'center';
   g.textBaseline = 'middle';
   g.lineJoin = 'round';
