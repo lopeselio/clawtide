@@ -134,6 +134,75 @@ A hosted **guest** round, `r-mwdk3ymj-b2d137` (a guest and three Driftwood Crabs
 
 `pnpm verify` reads the chain through three public testnet RPCs (intea, dRPC, fastnear), retries each on a rate limit and moves to the next; pass `--rpc <url>` to use your own.
 
+## Built on NEAR
+
+What each NEAR technology does in Clawtide, and where to look. Each GIF is a short loop (12 seconds or less).
+
+| Technology | What Clawtide uses it for | Where to look |
+|---|---|---|
+| NEAR smart contracts (Rust, near-sdk 5.29.1) | rounds: the secret's commitment, the VRF draw, seals every 3 s, openings rebuilt onchain, settlement; rockpools, raids, the crown, seasons | [`contracts/clawtide`](contracts/clawtide/src/lib.rs), [`clawtide.testnet`](https://testnet.nearblocks.io/address/clawtide.testnet) |
+| Block VRF randomness (`env::random_seed_array`) | each sandbar's seed, drawn by `draw_tide` in a later receipt than the referee's commitment | `create_round`, `draw_tide` in [`lib.rs`](contracts/clawtide/src/lib.rs), [`board.ts`](packages/rules/src/board.ts) |
+| NEP-141 fungible token | PEARL: minted only at settlement (≤ 60 a sandbar) and as a 2-PEARL defence bounty; moved by raids | `settle_round`, `settle_raid`, `ft_*` in [`lib.rs`](contracts/clawtide/src/lib.rs) |
+| Function-call access keys (agent accounts) | the five Driftwood Crabs, `pincer.` … `skitter.clawtide.testnet`, whose only key can call `build_rockpool` | `create_agent_account` in [`lib.rs`](contracts/clawtide/src/lib.rs), [`agents.ts`](apps/server/src/agents.ts) |
+| NEP-413 sign-in, NEP-366 meta-transactions | wallet sign-in (Better Auth + better-near-auth, NEAR Connect) and gasless rockpool commits through [`clawtide-relay.testnet`](https://testnet.nearblocks.io/address/clawtide-relay.testnet) | [`apps/web/src/wallet.ts`](apps/web/src/wallet.ts), [`apps/server/src/ba.ts`](apps/server/src/ba.ts) |
+| NEAR AI Cloud | the Driftwood Crabs' pre-round taunts, each signed in the TEE; the model never plays | [`apps/server/src/nearai.ts`](apps/server/src/nearai.ts) |
+
+### NEAR's block VRF: a sandbar nobody picks
+
+<img src="media/stack/vrf.gif" alt="Diagram: the referee clawtide-ref.testnet commits the hash of a secret with create_round on clawtide.testnet; a later receipt, draw_tide, reads env::random_seed_array; the board seed sha256(vrf | secret) needs both and sets the sandbar's shape and what is buried, while every crab only sees what has been dug." width="100%">
+
+`create_round` stores `sha256(secret)` and returns a promise to the contract itself: `draw_tide` runs in the next
+receipt, in a different block, and stores the block's VRF-derived seed ([`lib.rs`](contracts/clawtide/src/lib.rs)).
+The board seed is `sha256("clawtide|board|{vrf}|{secret}")`, so neither the referee nor any player can choose a board.
+Clients and AI crabs only ever get what has been dug.
+
+### NEAR smart contracts: sealed rounds
+
+<img src="media/stack/seals.gif" alt="Diagram: every 3 seconds the referee posts one seal per crab to clawtide.testnet, folded into a chain head; when the tide comes in, open_chunks reveals the secret and the log, the contract rebuilds every seal and the re-folded head must equal the sealed one, then anyone may call settle_round to mint PEARL; pnpm verify r-mwahfr6v-ab6271 replays the round and every check passes." width="100%">
+
+Every 30 ticks (3 s) `seal` records a salted hash of each crab's hops and standing, folded into a chain head; pending
+chunks go out in one transaction. At the tide, `open_chunks` checks the secret, rebuilds every seal from the opened log
+and re-folds the head, which must equal the sealed one; only then can anyone call `settle_round`. `pnpm verify` replays
+every tick with `packages/rules`, re-deciding every AI hop from that crab's own view ([`seal.ts`](packages/rules/src/seal.ts)).
+
+### PEARL: an NEP-141 memecoin with rules for a policy
+
+<img src="media/stack/pearl.gif" alt="Diagram: settle_round mints PEARL (0 decimals, on clawtide.testnet) to each signed-in crab, at most 60 a sandbar, and a guest round mints nothing; settle_raid moves 10% of the owner's PEARL (at least 1, at most 20) to a raider who reaches the cache, or mints the owner a 2-PEARL bounty; get_crown names whoever holds the most, over 7-day seasons." width="100%">
+
+PEARL (`clawtide.testnet`, 0 decimals, free registration) has no sale, premint or team allocation. `settle_round`
+mints `min(pearls, 60)` to each seat with a NEAR account, and a guest round mints nothing to anyone, AI crabs
+included. `settle_raid` moves 10% of the owner's PEARL (at least 1, at most 20) to a raider who reached the cache, or
+mints the owner a 2-PEARL bounty; `get_crown` is whoever holds the most ([`lib.rs`](contracts/clawtide/src/lib.rs)).
+
+### The Driftwood Crabs: agents with one key
+
+<img src="media/stack/crabs.gif" alt="Diagram: clawtide.testnet creates five sub-accounts, pincer, barnacle, kelpie, coral and skitter, each with only a build_rockpool function-call key and a 0.5 NEAR gas allowance; they play one hop at a time from their own view with packages/rules bot.ts and build a fresh rockpool every day; NEAR AI Cloud only writes a signed pre-round taunt and never plays." width="100%">
+
+The contract creates each crab with `create_agent_account`: a sub-account whose only key is a function-call key for
+`build_rockpool`, with a 0.5 NEAR gas allowance. In a round they decide one hop at a time from their own view
+([`bot.ts`](packages/rules/src/bot.ts)); every day each builds a fresh rockpool from a server secret and yesterday's is
+revealed onchain ([`agents.ts`](apps/server/src/agents.ts)). `Qwen/Qwen3.6-35B-A3B-FP8` on NEAR AI Cloud only writes
+their taunts, signed by the enclave ([`nearai.ts`](apps/server/src/nearai.ts)).
+
+### Wallet sign-in and gasless rockpools
+
+<img src="media/stack/rockpools.gif" alt="Diagram: you sign in through NEAR Connect with a NEP-413 signature checked by Better Auth, and your pearls bank as PEARL; a painted rockpool goes to clawtide-relay.testnet as a delegate action (NEP-366) and build_rockpool stores only sha256(layout | salt); the referee records raids with begin_raid and settle_raid, and reveal_pool publishes the layout later so pnpm verify raid can replay them." width="100%">
+
+Signing in (NEP-413, Better Auth + better-near-auth; [`wallet.ts`](apps/web/src/wallet.ts)) is what makes your
+pearls bank as PEARL. **Commit to NEAR (gasless)** sends `build_rockpool` as a NEP-366 meta-transaction:
+`clawtide-relay.testnet` pays the gas, relays only to the Clawtide contract and never attaches a deposit
+([`ba.ts`](apps/server/src/ba.ts)). Only the layout's hash goes onchain; when you rebuild, `reveal_pool` publishes the
+old layout, the contract checks it against the hash, and `pnpm verify raid <id>` replays the raids against it.
+
+### The rest of the stack
+
+<img src="media/stack/stack.gif" alt="Diagram: apps/web (three.js voxel sandbar and sea shader, React HUD on Vite, Better Auth and NEAR Connect) talks over websockets to apps/server (Node 22 and ws: rooms at 10 ticks a second, the round lifecycle, the relayer; near-api-js 7 and near-kit), which reads and writes NEAR testnet over public RPC; packages/rules is shared; it runs as one replica on Azure Container Apps with records on Azure Files." width="100%">
+
+A React + three.js client ([`apps/web`](apps/web/src/main.tsx)) and a Node 22 + `ws` server
+([`apps/server`](apps/server/src/main.ts)) in one container on Azure Container Apps. The deterministic rules
+([`packages/rules`](packages/rules/src/index.ts)) run in the browser, on the server and in `pnpm verify`, and their
+seal, head and pool hashes match the contract's byte for byte.
+
 ## How it works
 
 | Piece | Where |
