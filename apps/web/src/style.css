@@ -177,3 +177,13 @@ input.code { width: 88px; text-transform: uppercase; letter-spacing: 3px; text-a
   .lesson { bottom: calc(8px + var(--safe-b)); width: min(440px, calc(100% - 100px)); }
   .hint { bottom: calc(10px + var(--safe-b)); top: auto; width: min(380px, 50vw); }
 }
+
+/* sign-in failure card (same as fogwater) */
+.acct { position: relative; }
+.signin-fail { position: absolute; top: calc(100% + 8px); right: 0; z-index: 50; width: min(320px, 86vw); display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border-radius: 12px; background: #1b1424; border: 1px solid #ff9b8a; box-shadow: 0 10px 30px rgba(0,0,0,.45); font-size: 13px; line-height: 1.4; text-align: left; animation: signin-in .18s ease-out; }
+.signin-fail b { color: #ff9b8a; }
+.signin-fail-row { display: flex; gap: 8px; margin-top: 2px; }
+.signin-fail details { font-size: 11px; opacity: .7; }
+.signin-fail code { word-break: break-word; }
+@keyframes signin-in { from { opacity: 0; transform: translateY(-4px); } }
+@media (prefers-reduced-motion: reduce) { .signin-fail { animation: none; } }
