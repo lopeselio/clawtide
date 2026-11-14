@@ -8,7 +8,7 @@ import { Round, frameOf } from './Round.tsx';
 import { SEAT_COLORS, World } from './scene.ts';
 import { isMuted, setMuted, sfx, unlockAudio } from './sound.ts';
 import { Walkthrough } from './Walkthrough.tsx';
-import { setContract, signIn, signOut } from './wallet.ts';
+import { explainSignIn, setContract, signIn, signOut } from './wallet.ts';
 
 // The shell: one three.js world behind everything; title, walkthrough, practice, room, round and
 // rockpools on top. On the title screen four Driftwood Crabs dig a random sandbar in attract mode.
@@ -163,13 +163,25 @@ function AccountBox({ account, setAccount }: { account: string | null; setAccoun
       </span>
     );
   }
+  const go = (): void => {
+    setBusy(true); setErr('');
+    signIn().then(setAccount).catch((e: Error) => setErr(e.message || 'unknown error')).finally(() => setBusy(false));
+  };
+  const why = err ? explainSignIn(err) : null;
   return (
     <span className="acct">
-      {err && <small className="err" title={err}>sign-in failed</small>}
-      <button className="small" disabled={busy} onClick={() => {
-        setBusy(true); setErr('');
-        signIn().then(setAccount).catch((e: Error) => setErr(e.message)).finally(() => setBusy(false));
-      }}>{busy ? 'Waiting for wallet…' : 'Sign in with NEAR'}</button>
+      <button className="small" disabled={busy} onClick={go}>{busy ? 'Waiting for wallet…' : 'Sign in with NEAR'}</button>
+      {why && !busy && (
+        <span className="signin-fail" role="alert">
+          <b>Sign-in didn’t go through</b>
+          <span>{why.text}</span>
+          <span className="signin-fail-row">
+            {why.retry && <button className="small" onClick={go}>Try again</button>}
+            <button className="ghost small" onClick={() => setErr('')}>Dismiss</button>
+          </span>
+          <details><summary>Details</summary><code>{err}</code></details>
+        </span>
+      )}
     </span>
   );
 }
