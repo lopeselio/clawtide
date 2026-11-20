@@ -8,7 +8,7 @@ import { Round, frameOf } from './Round.tsx';
 import { SEAT_COLORS, World } from './scene.ts';
 import { isMuted, setMuted, sfx, unlockAudio } from './sound.ts';
 import { Walkthrough } from './Walkthrough.tsx';
-import { explainSignIn, setContract, signIn, signOut } from './wallet.ts';
+import { dismissed, explainSignIn, setContract, signIn, signOut } from './wallet.ts';
 
 // The shell: one three.js world behind everything; title, walkthrough, practice, room, round and
 // rockpools on top. On the title screen four Driftwood Crabs dig a random sandbar in attract mode.
@@ -165,7 +165,7 @@ function AccountBox({ account, setAccount }: { account: string | null; setAccoun
   }
   const go = (): void => {
     setBusy(true); setErr('');
-    signIn().then(setAccount).catch((e: Error) => setErr(e.message || 'unknown error')).finally(() => setBusy(false));
+    signIn().then(setAccount).catch((e: Error) => { if (!dismissed(e)) setErr(e.message || 'unknown error'); }).finally(() => setBusy(false));
   };
   const why = err ? explainSignIn(err) : null;
   return (
